@@ -18,16 +18,16 @@ module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
 
   (* n : dimensionality of state space; m : input dimension *)
   let solve
-      ?(conv_threshold = 1E-4)
-      ?(n_beg = 1)
-      ?saving_iter
-      ~u_init
-      ~primal'
-      ~n
-      ~m
-      ~n_steps
-      ~prms
-      data
+        ?(conv_threshold = 1E-4)
+        ?(n_beg = 1)
+        ?saving_iter
+        ~u_init
+        ~primal'
+        ~n
+        ~m
+        ~n_steps
+        ~prms
+        data
     =
     let open Generative_P in
     let module M = struct
@@ -58,30 +58,30 @@ module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
 
       let rl_x =
         Option.map L.neg_jac_t ~f:(fun neg_jac_t ~theta ->
-            let neg_jac_t = neg_jac_t ~prms:theta.likelihood in
-            let neg_jac_ts =
-              Array.init n_steps ~f:(fun k -> neg_jac_t ~data_t:(L.data_slice ~k data.o))
-            in
-            fun ~k ~x ~u:_ ->
-              if k < n_beg
-              then AD.Mat.zeros 1 n
-              else (
-                let k = k - n_beg in
-                neg_jac_ts.(k) ~k ~z_t:x))
+          let neg_jac_t = neg_jac_t ~prms:theta.likelihood in
+          let neg_jac_ts =
+            Array.init n_steps ~f:(fun k -> neg_jac_t ~data_t:(L.data_slice ~k data.o))
+          in
+          fun ~k ~x ~u:_ ->
+            if k < n_beg
+            then AD.Mat.zeros 1 n
+            else (
+              let k = k - n_beg in
+              neg_jac_ts.(k) ~k ~z_t:x))
 
 
       let rl_xx =
         Option.map L.neg_hess_t ~f:(fun neg_hess_t ~theta ->
-            let neg_hess_t = neg_hess_t ~prms:theta.likelihood in
-            let neg_hess_ts =
-              Array.init n_steps ~f:(fun k -> neg_hess_t ~data_t:(L.data_slice ~k data.o))
-            in
-            fun ~k ~x ~u:_ ->
-              if k < n_beg
-              then AD.Mat.zeros n n
-              else (
-                let k = k - n_beg in
-                neg_hess_ts.(k) ~k ~z_t:x))
+          let neg_hess_t = neg_hess_t ~prms:theta.likelihood in
+          let neg_hess_ts =
+            Array.init n_steps ~f:(fun k -> neg_hess_t ~data_t:(L.data_slice ~k data.o))
+          in
+          fun ~k ~x ~u:_ ->
+            if k < n_beg
+            then AD.Mat.zeros n n
+            else (
+              let k = k - n_beg in
+              neg_hess_ts.(k) ~k ~z_t:x))
 
 
       let rl_uu =
@@ -135,7 +135,7 @@ module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
         List.init n_steps ~f:(fun k -> AD.pack_arr (Mat.get_slice [ [ k ] ] us))
     in
     (*
-        u0        u1  u2 ......   uT
+       u0        u1  u2 ......   uT
         x0 = 0    x1  x2 ......   xT xT+1
     *)
     let tau =
@@ -164,15 +164,14 @@ end
 module VAE
     (U : Prior_T)
     (D : Dynamics_T)
-    (L : Likelihood_T) (X : sig
-      val n : int (* state dimension *)
-
-      val m : int (* input dimension *)
-
-      val n_steps : int
-      val n_beg : int Option.t
-      val diag_time_cov : bool
-    end) =
+    (L : Likelihood_T)
+    (X : sig
+       val n : int (* state dimension *)
+       val m : int (* input dimension *)
+       val n_steps : int
+       val n_beg : int Option.t
+       val diag_time_cov : bool
+     end) =
 struct
   open X
   module G = Owl_parameters.Make (Generative_P.Make (U.P) (D.P) (L.P))
@@ -280,24 +279,24 @@ struct
     let u = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] u in
     let o =
       Array.init n_samples ~f:(fun i ->
-          let z = AD.Maths.(reshape (get_slice [ [ i ] ] z) [| n_steps; n |]) in
-          let o =
-            (if pre then L.pre_sample else L.sample) ~prms:prms.generative.likelihood ~z
-          in
-          o
-          |> L.to_mat_list
-          |> Array.of_list
-          |> Array.map ~f:(fun (label, v) ->
-                 label, AD.Maths.reshape v [| 1; AD.Mat.row_num v; AD.Mat.col_num v |]))
+        let z = AD.Maths.(reshape (get_slice [ [ i ] ] z) [| n_steps; n |]) in
+        let o =
+          (if pre then L.pre_sample else L.sample) ~prms:prms.generative.likelihood ~z
+        in
+        o
+        |> L.to_mat_list
+        |> Array.of_list
+        |> Array.map ~f:(fun (label, v) ->
+          label, AD.Maths.reshape v [| 1; AD.Mat.row_num v; AD.Mat.col_num v |]))
     in
     (* for backward compatibility with Marine's previous convention, I need to transpose *)
     let tr = AD.Maths.transpose ~axis:[| 1; 2; 0 |] in
     let o =
       let n_o = Array.length o.(0) in
       Array.init n_o ~f:(fun i ->
-          let label, _ = o.(0).(i) in
-          ( label
-          , o |> Array.map ~f:(fun a -> snd a.(i)) |> AD.Maths.concatenate ~axis:0 |> tr ))
+        let label, _ = o.(0).(i) in
+        ( label
+        , o |> Array.map ~f:(fun a -> snd a.(i)) |> AD.Maths.concatenate ~axis:0 |> tr ))
     in
     tr u, tr z, o
 
@@ -334,12 +333,12 @@ struct
           assert (Array.length u_s = 3);
           let n_samples = u_s.(0) in
           let du = AD.Maths.(u - AD.expand0 mu_u) in
-          (* quadratic term: 
+          (* quadratic term:
              assuming vec is stacking columns, du = vec(dU) and dU = is T x N
                du^t ((S^t S)⊗(T^t T))^{-1} du
-            =  du^t ((S^{-1} S^{-t})⊗(T^{-1} T^{-t})) du 
+            =  du^t ((S^{-1} S^{-t})⊗(T^{-1} T^{-t})) du
             =  du^t (S^{-1}⊗T^{-1}) (S^{-t}⊗T^{-t}) du
-            =  || (S^{-t}⊗T^{-t}) du ||^2 
+            =  || (S^{-t}⊗T^{-t}) du ||^2
             =  || vec(T^{-t} dU S^{-1}) ||^2 *)
           let quadratic_term =
             (* K x T x N *)
@@ -392,8 +391,8 @@ struct
 
   let elbo_all ~u_init ~n_samples ?beta ~prms data =
     Array.foldi data ~init:(AD.F 0.) ~f:(fun i accu data ->
-        let elbo, _ = elbo ~u_init:u_init.(i) ~n_samples ?beta ~prms data in
-        AD.Maths.(accu + elbo))
+      let elbo, _ = elbo ~u_init:u_init.(i) ~n_samples ?beta ~prms data in
+      AD.Maths.(accu + elbo))
 
 
   type u_init =
@@ -402,18 +401,18 @@ struct
     ]
 
   let train
-      ?(n_samples = fun _ -> 1)
-      ?(mini_batch : int Option.t)
-      ?max_iter
-      ?conv_threshold
-      ?(mu_u : u_init Array.t Option.t)
-      ?(recycle_u = true)
-      ?save_progress_to
-      ?in_each_iteration
-      ?eta
-      ?reg
-      ~init_prms
-      data
+        ?(n_samples = fun _ -> 1)
+        ?(mini_batch : int Option.t)
+        ?max_iter
+        ?conv_threshold
+        ?(mu_u : u_init Array.t Option.t)
+        ?(recycle_u = true)
+        ?save_progress_to
+        ?in_each_iteration
+        ?eta
+        ?reg
+        ~init_prms
+        data
     =
     let n_samples_ = ref (n_samples 1) in
     let n_trials = Array.length data in
@@ -430,7 +429,7 @@ struct
       | Some z -> z
       | None -> Array.create ~len:n_trials (`guess None)
     in
-    let adam_loss theta gradient =
+    let adam_loss _ theta gradient =
       Stdlib.Gc.full_major ();
       let theta = C.broadcast theta in
       let data_batch =
@@ -439,9 +438,9 @@ struct
         | Some size ->
           let ids =
             C.broadcast' (fun () ->
-                let ids = Array.mapi data ~f:(fun i _ -> i) in
-                Array.permute ids;
-                Array.sub ids ~pos:0 ~len:size)
+              let ids = Array.mapi data ~f:(fun i _ -> i) in
+              Array.permute ids;
+              Array.sub ids ~pos:0 ~len:size)
           in
           Array.map ids ~f:(Array.get data)
       in
@@ -504,28 +503,28 @@ struct
     let stop iter current_loss =
       n_samples_ := n_samples iter;
       Option.iter in_each_iteration ~f:(fun do_this ->
-          let prms = P.unpack handle (AD.pack_arr theta) in
-          let u_init =
-            Array.map us_init ~f:(function
-                | `known _ -> None
-                | `guess z -> z)
-          in
-          do_this ~u_init ~prms iter);
+        let prms = P.unpack handle (AD.pack_arr theta) in
+        let u_init =
+          Array.map us_init ~f:(function
+            | `known _ -> None
+            | `guess z -> z)
+        in
+        do_this ~u_init ~prms iter);
       C.root_perform (fun () ->
-          Stdio.printf "\r[%05i]%!" iter;
-          Option.iter save_progress_to ~f:(fun (loss_every, prms_every, prefix) ->
-              let kk = Int.((iter - 1) / loss_every) in
-              if Int.((iter - 1) % prms_every) = 0
-              then (
-                let prefix = Printf.sprintf "%s_%i" prefix kk in
-                let prms = P.unpack handle (AD.pack_arr theta) in
-                Misc.save_bin ~out:(prefix ^ ".params.bin") prms;
-                P.save_to_files ~prefix ~prms);
-              if Int.((iter - 1) % loss_every) = 0
-              then (
-                Stdio.printf "\r[%05i] %.4f%!" iter current_loss;
-                let z = [| [| Float.of_int kk; current_loss |] |] in
-                Mat.(save_txt ~append:true (of_arrays z) ~out:(prefix ^ ".loss")))));
+        Stdio.printf "\r[%05i]%!" iter;
+        Option.iter save_progress_to ~f:(fun (loss_every, prms_every, prefix) ->
+          let kk = Int.((iter - 1) / loss_every) in
+          if Int.((iter - 1) % prms_every) = 0
+          then (
+            let prefix = Printf.sprintf "%s_%i" prefix kk in
+            let prms = P.unpack handle (AD.pack_arr theta) in
+            Misc.save_bin ~out:(prefix ^ ".params.bin") prms;
+            P.save_to_files ~prefix prms);
+          if Int.((iter - 1) % loss_every) = 0
+          then (
+            Stdio.printf "\r[%05i] %.4f%!" iter current_loss;
+            let z = [| [| Float.of_int kk; current_loss |] |] in
+            Mat.(save_txt ~append:true (of_arrays z) ~out:(prefix ^ ".loss")))));
       match max_iter with
       | Some mi -> iter > mi
       | None -> false
@@ -535,13 +534,13 @@ struct
 
 
   let recalibrate_uncertainty
-      ?n_samples
-      ?max_iter
-      ?save_progress_to
-      ?in_each_iteration
-      ?eta
-      ~prms
-      data
+        ?n_samples
+        ?max_iter
+        ?save_progress_to
+        ?in_each_iteration
+        ?eta
+        ~prms
+        data
     =
     let n_trials = Array.length data in
     assert (Int.(n_trials % C.n_nodes = 0));
@@ -552,17 +551,17 @@ struct
     (* get posterior means once and for all *)
     let mu_u =
       Array.mapi data ~f:(fun i data_i ->
-          if Int.(i % C.n_nodes = C.rank)
-          then `known (Some (posterior_mean ~u_init:None ~prms data_i))
-          else `known None)
+        if Int.(i % C.n_nodes = C.rank)
+        then `known (Some (posterior_mean ~u_init:None ~prms data_i))
+        else `known None)
     in
     (* freeze all parameters except for the posterior uncertainty *)
     let init_prms =
       P.map ~f:Owl_parameters.pin prms
       |> Accessor.map (VAE_P.A.recognition @> Recognition_P.A.space_cov) ~f:(fun _ ->
-             prms.recognition.space_cov)
+        prms.recognition.space_cov)
       |> Accessor.map (VAE_P.A.recognition @> Recognition_P.A.time_cov) ~f:(fun _ ->
-             prms.recognition.time_cov)
+        prms.recognition.time_cov)
     in
     let recalibrated_prms =
       train
@@ -578,9 +577,9 @@ struct
     (* pop the uncertainty back in the original prms set *)
     prms
     |> Accessor.map (VAE_P.A.recognition @> Recognition_P.A.space_cov) ~f:(fun _ ->
-           recalibrated_prms.recognition.space_cov)
+      recalibrated_prms.recognition.space_cov)
     |> Accessor.map (VAE_P.A.recognition @> Recognition_P.A.time_cov) ~f:(fun _ ->
-           recalibrated_prms.recognition.time_cov)
+      recalibrated_prms.recognition.time_cov)
 
 
   let check_grad ~prms data n_points file =
@@ -611,18 +610,16 @@ struct
     |> Stats.shuffle
     |> Array.sub ~pos:0 ~len:n_points
     |> Array.mapi ~f:(fun k id ->
-           Stdio.printf "\rcheck grad: %05i / %05i (out of %i)%!" (k + 1) n_points dim;
-           let true_g = Mat.get true_g 0 id in
-           let est_g =
-             let delta = 1E-6 in
-             let theta' = Mat.copy theta in
-             Mat.set theta' 0 id (Mat.get theta 0 id +. delta);
-             let loss' =
-               elbo_all ~prms:(P.unpack handle (Arr theta')) data |> AD.unpack_flt
-             in
-             Float.((loss' - loss) / delta)
-           in
-           [| true_g; est_g |])
+      Stdio.printf "\rcheck grad: %05i / %05i (out of %i)%!" (k + 1) n_points dim;
+      let true_g = Mat.get true_g 0 id in
+      let est_g =
+        let delta = 1E-6 in
+        let theta' = Mat.copy theta in
+        Mat.set theta' 0 id (Mat.get theta 0 id +. delta);
+        let loss' = elbo_all ~prms:(P.unpack handle (Arr theta')) data |> AD.unpack_flt in
+        Float.((loss' - loss) / delta)
+      in
+      [| true_g; est_g |])
     |> Mat.of_arrays
     |> Mat.save_txt ~out:file
     |> fun _ -> Stdio.print_endline ""
@@ -630,8 +627,8 @@ struct
 
   let save_data ?prefix data =
     Option.iter data.u ~f:(fun u ->
-        Mat.save_txt ~out:(Owl_parameters.with_prefix ?prefix "u") (AD.unpack_arr u));
+      Mat.save_txt ~out:(Owl_parameters.with_prefix ?prefix "u") (AD.unpack_arr u));
     Option.iter data.z ~f:(fun z ->
-        Mat.save_txt ~out:(Owl_parameters.with_prefix ?prefix "z") (AD.unpack_arr z));
+      Mat.save_txt ~out:(Owl_parameters.with_prefix ?prefix "z") (AD.unpack_arr z));
     L.save_data ~prefix:(Owl_parameters.with_prefix ?prefix "o") data.o
 end

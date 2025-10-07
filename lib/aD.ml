@@ -32,9 +32,9 @@ let squeeze0 x =
   Maths.reshape x [| s.(1); s.(2) |]
 
 
-let rec requad x = Caml.Lazy.force _requad x
-and d_requad x = Caml.Lazy.force _d_requad x
-and d2_requad x = Caml.Lazy.force _d2_requad x
+let rec requad x = Stdlib.Lazy.force _requad x
+and d_requad x = Stdlib.Lazy.force _d_requad x
+and d2_requad x = Stdlib.Lazy.force _d2_requad x
 and rq x = Float.(0.5 * (x + sqrt (4. + square x)))
 and rqv x = Owl.Mat.(0.5 $* x + sqrt (4. $+ sqr x))
 
@@ -117,7 +117,7 @@ and _d2_requad =
 
 
 (* log-gamma, reverse-mode only ! *)
-let rec loggamma x = Caml.Lazy.force _loggamma x
+let rec loggamma x = Stdlib.Lazy.force _loggamma x
 
 and _loggamma =
   let open Builder in

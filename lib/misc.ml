@@ -2,7 +2,7 @@ open Base
 module Prms = Prms.D
 
 module AD = struct
-  include Owl.Algodiff.D
+  include Prms.AD
 
   module Mat = struct
     include Mat

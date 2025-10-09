@@ -1,9 +1,11 @@
 open Misc
 
-module Covariance_P = struct
-  type 'a p =
+module P = struct
+  type 'a prm =
     { d : 'a
     ; t : 'a
     }
   [@@deriving prms, accessors ~submodule:A]
+
+  include Make (Prms.Single)
 end

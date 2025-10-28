@@ -1,8 +1,5 @@
 open Misc
-open Prior
-open Dynamics
-open Likelihood
-open Vae_intf
+include module type of Vae_intf
 
 module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) : sig
   module G : module type of Generative_P.Make (U.P) (D.P) (L.P)
@@ -35,7 +32,6 @@ module Make
   module G : module type of Generative_P.Make (U.P) (D.P) (L.P)
   module R : module type of Recognition_P.Make (G) (Covariance_intf.P)
   module P : module type of VAE_P.Make (G) (R)
-  open P
 
   val init : ?sigma:float -> G.t -> P.t
   val sample_generative : prms:G.t' -> L.data data
@@ -44,7 +40,7 @@ module Make
   val posterior_mean
     :  ?saving_iter:string
     -> ?conv_threshold:float
-    -> u_init:AA.arr option
+    -> ?u_init:AA.arr
     -> prms:G.t'
     -> L.data data
     -> AD.t

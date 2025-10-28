@@ -26,7 +26,7 @@ module Recognition_P = struct
 end
 
 module VAE_P = struct
-  type ('gen, 'recog) prm_ =
+  type ('gen, 'recog) p =
     { generative : 'gen
     ; recognition : 'recog
     }

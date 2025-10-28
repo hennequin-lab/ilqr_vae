@@ -1,7 +1,7 @@
 open Base
 open Owl
 open Ilqr_vae
-open Variational
+open Misc
 
 type setup =
   { n : int
@@ -11,34 +11,34 @@ type setup =
   }
 
 module Make_model (P : sig
-  val setup : setup
-  val n_beg : int Option.t
-end) =
+    val setup : setup
+    val n_beg : int Option.t
+  end) =
 struct
-  module U = Priors.Student (struct
-    let n_beg = P.n_beg
-  end)
+  module U = Prior.Student (struct
+      let n_beg = P.n_beg
+    end)
 
-  module L = Likelihoods.Gaussian (struct
-    let label = "o"
-    let normalize_c = false
-  end)
+  module L = Likelihood.Gaussian (struct
+      let label = "o"
+      let normalize_c = false
+    end)
 
   module D = Dynamics.MGU2 (struct
-    let phi x = AD.Maths.(AD.requad x - F 1.)
-    let d_phi = AD.d_requad
-    let sigma x = AD.Maths.sigmoid x
+      let phi x = AD.Maths.(AD.requad x - F 1.)
+      let d_phi = AD.d_requad
+      let sigma x = AD.Maths.sigmoid x
 
-    let d_sigma x =
-      let tmp = AD.Maths.(exp (neg x)) in
-      AD.Maths.(tmp / sqr (F 1. + tmp))
+      let d_sigma x =
+        let tmp = AD.Maths.(exp (neg x)) in
+        AD.Maths.(tmp / sqr (F 1. + tmp))
 
 
-    let n_beg = P.n_beg
-  end)
+      let n_beg = P.n_beg
+    end)
 
   module Model =
-    VAE (U) (D) (L)
+    Vae.Make (U) (D) (L)
       (struct
         let n = P.setup.n
         let m = P.setup.m
@@ -64,9 +64,9 @@ let generate ?(sigma = 10.) ?(rho = 28.) ?(beta = 8. /. 3.) ~n_steps n_trials =
     Mat.(of_array [| xdot; ydot; zdot |] 1 3)
   in
   Array.init n_trials ~f:(fun _ ->
-      let x0 = Mat.uniform ~a:(-10.) ~b:10. 1 3 in
-      let _, xs = Owl_ode.Ode.odeint (module Owl_ode.Native.D.RK4) f x0 tspec () in
-      Arr.reshape xs [| 1; n_steps; 3 |])
+    let x0 = Mat.uniform ~a:(-10.) ~b:10. 1 3 in
+    let _, xs = Owl_ode.Ode.odeint (module Owl_ode.Native.D.RK4) f x0 tspec () in
+    Arr.reshape xs [| 1; n_steps; 3 |])
   |> Arr.concatenate ~axis:0
 
 

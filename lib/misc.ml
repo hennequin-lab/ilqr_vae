@@ -154,7 +154,7 @@ let time_this ~label f =
   res
 
 
-let print s = Stdio.print_endline (Sexp.to_string_hum s)
+let print s = if C.first then Stdio.print_endline (Sexp.to_string_hum s)
 
 let with_prefix ?prefix s =
   match prefix with

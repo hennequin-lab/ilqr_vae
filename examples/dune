@@ -2,7 +2,7 @@
  (names lorenz lorenz_analysis)
  (libraries cmdargs ilqr_vae owl-ode)
  (preprocess
-  (pps ppx_accessor)))
+  (pps ppx_sexp_message ppx_accessor)))
 
 (env
  (dev

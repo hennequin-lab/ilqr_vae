@@ -1,7 +1,6 @@
 open Base
 open Misc
-open Vae_intf
-(* open Accessor.O *)
+include Vae_intf
 
 (* -------------------------------------
    -- iLQR primitive
@@ -230,7 +229,7 @@ struct
 
   let primal' = G.map ~f:AD.primal'
 
-  let posterior_mean ?saving_iter ?conv_threshold ~u_init ~(prms : G.t') data =
+  let posterior_mean ?saving_iter ?conv_threshold ?u_init ~(prms : G.t') data =
     Ilqr.solve
       ?saving_iter
       ?conv_threshold
@@ -313,15 +312,16 @@ struct
     | `sampling_based ->
       let logp = U.logp ~prms:prms.generative.prior ~n_steps in
       let logq =
-        let c_space = Covariance.to_chol_factor prms.recognition.space_cov in
-        let c_time = Covariance.to_chol_factor prms.recognition.time_cov in
+        let recog = R.map ~f:AD.primal' prms.recognition in
+        let c_space = Covariance.to_chol_factor recog.space_cov in
+        let c_time = Covariance.to_chol_factor recog.time_cov in
         let m_ = AD.Mat.row_num c_space in
         let m = Float.of_int m_ in
         let t = Float.of_int (AD.Mat.row_num c_time) in
         let cst = Float.(m * t * log Owl.Const.pi2) in
         let log_det_term =
-          let d_space = prms.recognition.space_cov.d in
-          let d_time = prms.recognition.time_cov.d in
+          let d_space = recog.space_cov.d in
+          let d_time = recog.time_cov.d in
           AD.Maths.(F 2. * ((F m * sum' (log d_time)) + (F t * sum' (log d_space))))
         in
         fun mu_u u ->
@@ -356,7 +356,7 @@ struct
         assert (Array.length u_s = 3);
         let n_samples = u_s.(0) in
         (* compute log q(u) - log p(u) *)
-        let logqu = logq mu_u u in
+        let logqu = logq (AD.primal' mu_u) u in
         let logpu = logp u in
         AD.Maths.((logqu - logpu) / F Float.(of_int n_samples))
     | `direct f ->
@@ -377,7 +377,7 @@ struct
         match mu_u with
         | `known mu_u -> mu_u
         | `guess u_init ->
-          posterior_mean ?conv_threshold ~u_init ~prms:prms.generative data
+          posterior_mean ?conv_threshold ?u_init ~prms:prms.generative data
       in
       let samples = sample_recognition ~mu_u n_samples in
       let lik_term = lik_term samples data in

@@ -272,7 +272,6 @@ end
 
 module Pair (L1 : T) (L2 : T) = struct
   module P = Prms.Pair (L1.P) (L2.P)
-  open P
   open AD.Maths
 
   type datum = L1.datum * L2.datum

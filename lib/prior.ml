@@ -2,13 +2,13 @@ open Base
 open Misc
 open Owl
 
-module type T = Priors_intf.T
+module type T = Prior_intf.T
 
 module Gaussian (X : sig
     val n_beg : int Option.t
   end) =
 struct
-  module P = Priors_intf.Gaussian_P
+  module P = Prior_intf.Gaussian_P
   open P
   open AD.Maths
 
@@ -107,7 +107,7 @@ module Student (X : sig
     val n_beg : int Option.t
   end) =
 struct
-  module P = Priors_intf.Student_P
+  module P = Prior_intf.Student_P
   open P
   open AD.Maths
 

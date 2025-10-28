@@ -1,9 +1,8 @@
 (library
  (name ilqr_vae)
- (public_name ilqr_vae)
- (libraries base owl prms adam dilqr comm accessor)
+ (libraries base owl dilqr prms opt comm accessor)
  (preprocess
-  (pps ppx_accessor ppx-prms)))
+  (pps ppx_sexp_message ppx_accessor ppx-prms)))
 
 (env
  (dev

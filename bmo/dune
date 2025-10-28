@@ -1,0 +1,3 @@
+(library
+ (name bmo)
+ (libraries owl prms))

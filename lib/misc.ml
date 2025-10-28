@@ -1,8 +1,13 @@
 open Base
-module Prms = Prms.D
+
+(* change this AA module to change the precision globally *)
+module AA = Prms.Intf.D
+module DILQR = Dilqr.Default.Make (AA)
+module Prms = Prms.Make (AA)
+module Opt = Opt.Make (AA)
 
 module AD = struct
-  include Prms.AD
+  include Owl_algodiff_generic.Make (AA)
 
   module Mat = struct
     include Mat
@@ -147,3 +152,11 @@ let time_this ~label f =
   let t = Unix.gettimeofday () -. t0 in
   C.print_endline (Printf.sprintf "[%s] %f seconds\n%!" label t);
   res
+
+
+let print s = Stdio.print_endline (Sexp.to_string_hum s)
+
+let with_prefix ?prefix s =
+  match prefix with
+  | None -> s
+  | Some p -> p ^ "." ^ s

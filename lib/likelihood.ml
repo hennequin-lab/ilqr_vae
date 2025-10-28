@@ -2,7 +2,7 @@ open Base
 open Misc
 open Owl
 
-module type T = Likelihoods_intf.T
+module type T = Likelihood_intf.T
 
 let with_prefix ?prefix s =
   match prefix with
@@ -15,7 +15,7 @@ module Gaussian (X : sig
     val normalize_c : bool
   end) =
 struct
-  module P = Likelihoods_intf.Gaussian_P
+  module P = Likelihood_intf.Gaussian_P
   open P
   open AD.Maths
 
@@ -135,7 +135,7 @@ module Poisson (X : sig
     val d2_link_function : AD.t -> AD.t
   end) =
 struct
-  module P = Likelihoods_intf.Poisson_P
+  module P = Likelihood_intf.Poisson_P
   open P
   open X
   open AD.Maths

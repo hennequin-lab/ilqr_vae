@@ -1,6 +1,6 @@
 open Misc
 
-module type T = Likelihoods_intf.T
+module type T = Likelihood_intf.T
 
 module Gaussian (X : sig
     val label : string
@@ -8,7 +8,7 @@ module Gaussian (X : sig
   end) : sig
   include
     T
-    with module P = Likelihoods_intf.Gaussian_P
+    with module P = Likelihood_intf.Gaussian_P
      and type datum = AD.t
      and type data = AD.t
 
@@ -23,10 +23,7 @@ module Poisson (X : sig
     val d2_link_function : AD.t -> AD.t
   end) : sig
   include
-    T
-    with module P = Likelihoods_intf.Poisson_P
-     and type datum = AD.t
-     and type data = AD.t
+    T with module P = Likelihood_intf.Poisson_P and type datum = AD.t and type data = AD.t
 
   val init : n:int -> n_output:int -> unit -> P.t
   val pre_sample_before_link_function : prms:P.t' -> z:AD.t -> AD.t

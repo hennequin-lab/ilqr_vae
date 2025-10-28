@@ -1,18 +1,14 @@
 open Base
-open Owl
-include Variational_typ
-open Covariance
-open Priors
-open Dynamics
-open Likelihoods
-open Accessor.O
+open Misc
+open Vae_intf
+(* open Accessor.O *)
 
 (* -------------------------------------
    -- iLQR primitive
    ------------------------------------- *)
 
-module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
-  module G = Owl_parameters.Make (Generative_P.Make (U.P) (D.P) (L.P))
+module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
+  module G = Generative_P.Make (U.P) (D.P) (L.P)
 
   let linesearch = U.requires_linesearch || D.requires_linesearch || L.requires_linesearch
 
@@ -31,11 +27,11 @@ module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
     =
     let open Generative_P in
     let module M = struct
-      type theta = G.p
+      type theta = G.t'
 
       let primal' = primal'
 
-      let cost ~theta =
+      let cost ~(theta : theta) =
         let cost_lik = L.neg_logp_t ~prms:theta.likelihood in
         let cost_liks =
           Array.init n_steps ~f:(fun k -> cost_lik ~data_t:(L.data_slice ~k data.o))
@@ -53,11 +49,12 @@ module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
       let n = n
 
       let rl_u =
-        Option.map U.neg_jac_t ~f:(fun neg_jac_t ~theta -> neg_jac_t ~prms:theta.prior)
+        Option.map U.neg_jac_t ~f:(fun neg_jac_t ~(theta : theta) ->
+          neg_jac_t ~prms:theta.prior)
 
 
       let rl_x =
-        Option.map L.neg_jac_t ~f:(fun neg_jac_t ~theta ->
+        Option.map L.neg_jac_t ~f:(fun neg_jac_t ~(theta : theta) ->
           let neg_jac_t = neg_jac_t ~prms:theta.likelihood in
           let neg_jac_ts =
             Array.init n_steps ~f:(fun k -> neg_jac_t ~data_t:(L.data_slice ~k data.o))
@@ -71,7 +68,7 @@ module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
 
 
       let rl_xx =
-        Option.map L.neg_hess_t ~f:(fun neg_hess_t ~theta ->
+        Option.map L.neg_hess_t ~f:(fun neg_hess_t ~(theta : theta) ->
           let neg_hess_t = neg_hess_t ~prms:theta.likelihood in
           let neg_hess_ts =
             Array.init n_steps ~f:(fun k -> neg_hess_t ~data_t:(L.data_slice ~k data.o))
@@ -85,7 +82,8 @@ module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
 
 
       let rl_uu =
-        Option.map U.neg_hess_t ~f:(fun neg_hess_t ~theta -> neg_hess_t ~prms:theta.prior)
+        Option.map U.neg_hess_t ~f:(fun neg_hess_t ~(theta : theta) ->
+          neg_hess_t ~prms:theta.prior)
 
 
       let rl_ux = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Mat.zeros m n)
@@ -101,16 +99,23 @@ module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
         Some (fun ~theta:_ ~k:_ ~x:_ -> z)
 
 
-      let dyn ~theta = D.dyn ~theta:theta.dynamics
-      let dyn_x = Option.map D.dyn_x ~f:(fun d ~theta -> d ~theta:theta.dynamics)
-      let dyn_u = Option.map D.dyn_u ~f:(fun d ~theta -> d ~theta:theta.dynamics)
+      let dyn ~(theta : theta) = D.dyn ~theta:theta.dynamics
+
+      let dyn_x =
+        Option.map D.dyn_x ~f:(fun d ~(theta : theta) -> d ~theta:theta.dynamics)
+
+
+      let dyn_u =
+        Option.map D.dyn_u ~f:(fun d ~(theta : theta) -> d ~theta:theta.dynamics)
+
+
       let running_loss = cost
       let final_loss = final_cost
     end
     in
     let n_steps = n_steps + n_beg - 1 in
     let module IP =
-      Dilqr.Default.Make (struct
+      DILQR.Make (struct
         include M
 
         let n_steps = n_steps + 1
@@ -131,8 +136,7 @@ module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
     let us =
       match u_init with
       | None -> List.init n_steps ~f:(fun _ -> AD.Mat.zeros 1 m)
-      | Some us ->
-        List.init n_steps ~f:(fun k -> AD.pack_arr (Mat.get_slice [ [ k ] ] us))
+      | Some us -> List.init n_steps ~f:(fun k -> AD.Maths.get_slice [ [ k ] ] (Arr us))
     in
     (*
        u0        u1  u2 ......   uT
@@ -152,7 +156,7 @@ module ILQR (U : Prior_T) (D : Dynamics_T) (L : Likelihood_T) = struct
       match saving_iter with
       | None -> ()
       | Some file ->
-        Mat.save_txt ~out:file ~append:true (Mat.of_array [| !nprev |] 1 (-1))
+        AA.save_txt ~out:file ~append:true (AA.of_array [| !nprev |] [| 1; -1 |])
     in
     AD.Maths.get_slice [ [ 0; -2 ]; [ n; -1 ] ] tau
 end
@@ -161,10 +165,10 @@ end
    -- VAE
    ------------------------------------- *)
 
-module VAE
-    (U : Prior_T)
-    (D : Dynamics_T)
-    (L : Likelihood_T)
+module Make
+    (U : Prior.T)
+    (D : Dynamics.T)
+    (L : Likelihood.T)
     (X : sig
        val n : int (* state dimension *)
        val m : int (* input dimension *)
@@ -174,36 +178,29 @@ module VAE
      end) =
 struct
   open X
-  module G = Owl_parameters.Make (Generative_P.Make (U.P) (D.P) (L.P))
-  module R = Owl_parameters.Make (Recognition_P.Make (U.P) (D.P) (L.P))
-  module P = Owl_parameters.Make (VAE_P.Make (U.P) (D.P) (L.P))
+  module G = Generative_P.Make (U.P) (D.P) (L.P)
+  module R = Recognition_P.Make (G) (Covariance_intf.P)
+  module P = VAE_P.Make (G) (R)
   module Integrate = Dynamics.Integrate (D)
   module Ilqr = ILQR (U) (D) (L)
   open VAE_P
 
   let n_beg = Option.value_map n_beg ~default:1 ~f:(fun i -> i)
 
-  let rec_gen prms =
-    match prms.recognition.generative with
-    | Some x -> x
-    | None -> prms.generative
-
-
-  let init ?(tie = false) ?(sigma = 1.) gen (set : Owl_parameters.setter) =
-    let recognition =
+  let init ?(sigma = 1.) generative : P.t =
+    let recognition : R.t =
       Recognition_P.
-        { generative = (if tie then None else Some gen)
-        ; space_cov = Covariance.init ~pin_diag:true ~sigma2:1. set m
+        { generative
+        ; space_cov = Covariance.init ~pin_diag:true ~sigma2:1. m
         ; time_cov =
             Covariance.init
               ~no_triangle:diag_time_cov
               ~pin_diag:false
               ~sigma2:Float.(square sigma)
-              set
               (n_steps + n_beg - 1)
         }
     in
-    { generative = gen; recognition }
+    { generative; recognition }
 
 
   let sample_generative ~prms =
@@ -215,26 +212,25 @@ struct
 
 
   (* NON-DIFFERENTIABLE *)
-  let sample_generative_autonomous ~sigma ~prms =
-    let open Generative_P in
+  let sample_generative_autonomous ~sigma ~(prms : G.t') =
     let u =
-      let u0 = Mat.gaussian ~sigma 1 m in
-      let u_rest = Mat.zeros (n_steps - 1) m in
-      AD.pack_arr Mat.(u0 @= u_rest)
+      let u0 = AA.gaussian ~sigma [| 1; m |] in
+      let u_rest = AA.zeros [| n_steps - 1; m |] in
+      AD.pack_arr AA.(u0 @= u_rest)
     in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:(AD.expand0 u) |> AD.squeeze0 in
     let o = L.sample ~prms:prms.likelihood ~z in
     { u = Some u; z = Some z; o }
 
 
-  let logp ~prms data =
+  let logp ~(prms : P.t') data =
     let prms = prms.generative in
     L.logp ~prms:prms.likelihood ~z:(Option.value_exn data.z) ~data:data.o
 
 
-  let primal' = G.map ~f:(Owl_parameters.map AD.primal')
+  let primal' = G.map ~f:AD.primal'
 
-  let posterior_mean ?saving_iter ?conv_threshold ~u_init ~prms data =
+  let posterior_mean ?saving_iter ?conv_threshold ~u_init ~(prms : G.t') data =
     Ilqr.solve
       ?saving_iter
       ?conv_threshold
@@ -244,11 +240,11 @@ struct
       ~n
       ~m
       ~n_steps
-      ~prms:(rec_gen prms)
+      ~prms
       data
 
 
-  let sample_recognition ~prms =
+  let sample_recognition ~(prms : P.t') =
     let prms = prms.recognition in
     let chol_space = Covariance.to_chol_factor prms.space_cov in
     let chol_time_t = Covariance.to_chol_factor prms.time_cov in
@@ -312,7 +308,7 @@ struct
       AD.Maths.(logp data / F Float.(of_int n_samples))
 
 
-  let kl_term ~prms =
+  let kl_term ~(prms : P.t') =
     match U.kl_to_gaussian with
     | `sampling_based ->
       let logp = U.logp ~prms:prms.generative.prior ~n_steps in
@@ -322,10 +318,10 @@ struct
         let m_ = AD.Mat.row_num c_space in
         let m = Float.of_int m_ in
         let t = Float.of_int (AD.Mat.row_num c_time) in
-        let cst = Float.(m * t * log Const.pi2) in
+        let cst = Float.(m * t * log Owl.Const.pi2) in
         let log_det_term =
-          let d_space = Owl_parameters.extract prms.recognition.space_cov.d in
-          let d_time = Owl_parameters.extract prms.recognition.time_cov.d in
+          let d_space = prms.recognition.space_cov.d in
+          let d_time = prms.recognition.time_cov.d in
           AD.Maths.(F 2. * ((F m * sum' (log d_time)) + (F t * sum' (log d_space))))
         in
         fun mu_u u ->
@@ -372,15 +368,16 @@ struct
           ~time:prms.recognition.time_cov
 
 
-  let elbo ?conv_threshold ~u_init ~n_samples ?(beta = 1.) ~prms =
+  let elbo ?conv_threshold ~mu_u ~n_samples ?(beta = 1.) ~(prms : P.t') =
     let lik_term = lik_term ~prms in
     let kl_term = kl_term ~prms in
     let sample_recognition = sample_recognition ~prms in
     fun data ->
       let mu_u =
-        match u_init with
+        match mu_u with
         | `known mu_u -> mu_u
-        | `guess u_init -> posterior_mean ?conv_threshold ~u_init ~prms data
+        | `guess u_init ->
+          posterior_mean ?conv_threshold ~u_init ~prms:prms.generative data
       in
       let samples = sample_recognition ~mu_u n_samples in
       let lik_term = lik_term samples data in
@@ -389,23 +386,93 @@ struct
       elbo, AD.(unpack_arr (primal' mu_u))
 
 
-  let elbo_all ~u_init ~n_samples ?beta ~prms data =
-    Array.foldi data ~init:(AD.F 0.) ~f:(fun i accu data ->
-      let elbo, _ = elbo ~u_init:u_init.(i) ~n_samples ?beta ~prms data in
-      AD.Maths.(accu + elbo))
+  let elbo_gradient
+        ?(n_samples = 1)
+        ?(mini_batch : int option)
+        ?conv_threshold
+        ?reg
+        (prms : P.t)
+        (data : L.data data array)
+    =
+    let prms = C.broadcast prms in
+    let data_batch =
+      match mini_batch with
+      | None -> data
+      | Some size ->
+        let ids =
+          C.broadcast' (fun () ->
+            let ids = List.(permute (range 0 (Array.length data)) |> to_array) in
+            Array.sub ids ~pos:0 ~len:size)
+        in
+        Array.map ids ~f:(Array.get data)
+    in
+    let count, loss, g =
+      Array.foldi
+        data_batch
+        ~init:(0, 0., None)
+        ~f:(fun i (accu_count, accu_loss, accu_g) datai ->
+          Stdlib.Gc.major ();
+          if Int.(i % C.n_nodes = C.rank)
+          then (
+            try
+              let open AD in
+              let prms = P.make_reverse prms (AD.tag ()) in
+              let elbo, _mu_u =
+                elbo ?conv_threshold ~mu_u:(`guess None) ~n_samples ~prms datai
+              in
+              (* loss normalised by problem size *)
+              let loss =
+                Maths.(
+                  neg elbo
+                  / F
+                      Float.(
+                        of_int Int.(n_steps * L.size ~prms:prms.generative.likelihood)))
+              in
+              (* optionally add regularizer *)
+              let loss =
+                match reg with
+                | None -> loss
+                | Some r -> Maths.(loss + r ~prms)
+              in
+              reverse_prop (F 1.) loss;
+              let g = P.adjval prms in
+              let accu_g =
+                match accu_g with
+                | None -> Some g
+                | Some g' -> Some P.(g + g')
+              in
+              accu_count + 1, Float.(accu_loss + unpack_flt loss), accu_g
+            with
+            | _ ->
+              Stdio.printf "Trial %i failed with some exception." i;
+              accu_count, accu_loss, accu_g)
+          else accu_count, accu_loss, accu_g)
+    in
+    let total_count = Mpi.reduce_int count Mpi.Int_sum 0 Mpi.comm_world in
+    let loss = Mpi.reduce_float loss Mpi.Float_sum 0 Mpi.comm_world in
+    let average_gradient =
+      let gs = C.gather (Option.value_exn g) in
+      let g =
+        if C.first
+        then
+          Array.fold gs ~init:None ~f:(fun accu g ->
+            match accu with
+            | None -> Some g
+            | Some g' -> Some P.(g + g'))
+        else None
+      in
+      Option.map g ~f:(fun g -> P.(F Float.(1. / of_int total_count) $* g))
+    in
+    Float.(loss / of_int total_count), average_gradient
 
 
-  type u_init =
-    [ `known of AD.t option
-    | `guess of Mat.mat option
-    ]
-
-  let train
+  (*
+     let train
         ?(n_samples = fun _ -> 1)
-        ?(mini_batch : int Option.t)
+        ?(mini_batch : int option)
         ?max_iter
         ?conv_threshold
-        ?(mu_u : u_init Array.t Option.t)
+        ?(mu_u : posterior_mean array option)
         ?(recycle_u = true)
         ?save_progress_to
         ?in_each_iteration
@@ -427,7 +494,7 @@ struct
     let us_init =
       match mu_u with
       | Some z -> z
-      | None -> Array.create ~len:n_trials (`guess None)
+      | None -> Array.create ~len:n_trials (Guess None)
     in
     let adam_loss _ theta gradient =
       Stdlib.Gc.full_major ();
@@ -531,9 +598,10 @@ struct
     in
     let _ = Adam.min ?eta ?lb:lbound ?ub:ubound ~stop adam_loss theta in
     theta |> AD.pack_arr |> P.unpack handle
+  *)
 
-
-  let recalibrate_uncertainty
+  (*
+     let recalibrate_uncertainty
         ?n_samples
         ?max_iter
         ?save_progress_to
@@ -580,9 +648,10 @@ struct
       recalibrated_prms.recognition.space_cov)
     |> Accessor.map (VAE_P.A.recognition @> Recognition_P.A.time_cov) ~f:(fun _ ->
       recalibrated_prms.recognition.time_cov)
+  *)
 
-
-  let check_grad ~prms data n_points file =
+  (*
+     let check_grad ~prms data n_points file =
     let seed = Random.int 31415 in
     let u_init = Array.map data ~f:(fun _ -> `guess None) in
     let elbo_all ~prms =
@@ -623,12 +692,12 @@ struct
     |> Mat.of_arrays
     |> Mat.save_txt ~out:file
     |> fun _ -> Stdio.print_endline ""
-
+  *)
 
   let save_data ?prefix data =
     Option.iter data.u ~f:(fun u ->
-      Mat.save_txt ~out:(Owl_parameters.with_prefix ?prefix "u") (AD.unpack_arr u));
+      AA.save_txt ~out:(with_prefix ?prefix "u") (AD.unpack_arr u));
     Option.iter data.z ~f:(fun z ->
-      Mat.save_txt ~out:(Owl_parameters.with_prefix ?prefix "z") (AD.unpack_arr z));
-    L.save_data ~prefix:(Owl_parameters.with_prefix ?prefix "o") data.o
+      AA.save_txt ~out:(with_prefix ?prefix "z") (AD.unpack_arr z));
+    L.save_data ~prefix:(with_prefix ?prefix "o") data.o
 end

@@ -1,0 +1,3 @@
+(library
+ (name dilqr)
+ (libraries owl bmo stdio prms))

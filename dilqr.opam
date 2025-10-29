@@ -11,13 +11,8 @@ build: [
 depends: [
   "ocaml" {>= "4.12.0"}
   "dune" {build & >= "1.1.0"}
-  "accessor"
-  "ppx_accessor"
-  "ppx_sexp_message"
-  "ppx-prms"
-  "opt"
+  "stdio"
+  "bmo"
   "prms"
-  "comm"
-  "dilqr"
 ]
-synopsis: "iLQR-VAE"
+synopsis: "Differentiable iLQR"

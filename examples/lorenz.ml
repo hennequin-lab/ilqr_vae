@@ -115,7 +115,7 @@ let _ = save_results (in_dir "init") init_prms data
 
 module Optimizer = Opt.Adam.Make (Model.P)
 
-let config k = Opt.Adam.{ default_config with learning_rate = Some Float.(0.01) }
+let config _k = Opt.Adam.{ default_config with learning_rate = Some 0.01 }
 
 let rec iter ~k state =
   let prms = C.broadcast (Optimizer.v state) in

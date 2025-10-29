@@ -1,3 +1,4 @@
 (library
+ (public_name bmo)
  (name bmo)
  (libraries owl prms))

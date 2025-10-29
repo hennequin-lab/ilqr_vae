@@ -22,8 +22,15 @@ module Make (A : Prms.Intf.A) = struct
     | _exn -> false
 
 
+  (* solve ell^T ell x = b for x, with ell upper triangular *)
+  let triangular_solve ell b =
+    (* ell^T z = b *)
+    let z = AD.Linalg.linsolve ~trans:true ~typ:`u ell b in
+    (* ell x = z *)
+    AD.Linalg.linsolve ~trans:false ~typ:`u ell z
+
+
   let backward flxx flx tape =
-    let n = AD.(shape flx).(1) in
     let kf = List.length tape in
     let k, _, _, df1, df2, acc =
       let rec backward (delta, mu) (k, vxx, vx, df1, df2, acc) = function
@@ -35,9 +42,14 @@ module Make (A : Prms.Intf.A) = struct
           let qxx = AD.Maths.(rlxx + (a *@ vxx *@ at)) in
           let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
           let quu = AD.Maths.((quu + transpose quu) / F 2.) in
-          let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
-          let _, svs, _ = AD.Linalg.svd qtuu in
-          if not (_is_pos_def (AD.primal' qtuu) && A.min' (AD.unpack_arr svs) > 1E-8)
+          let mu = max mu 1e-8 in
+          let qtuu = AD.Maths.(quu + (AD.F mu * b *@ bt)) in
+          let is_pos_def, qtuu_chol =
+            try true, Some (AD.Linalg.chol ~upper:true qtuu) with
+            | _ -> false, None
+          in
+          (* let _, svs, _ = AD.Linalg.svd qtuu in *)
+          if not is_pos_def (* && A.min' (AD.unpack_arr svs) > 1E-8) *)
           then (
             if mu > 0. then Printf.printf "Regularizing... mu = %f \n%!" mu;
             backward
@@ -45,13 +57,20 @@ module Make (A : Prms.Intf.A) = struct
               (kf - 1, flxx, flx, AD.F 0., AD.F 0., [])
               tape)
           else (
+            let qtuu_chol =
+              match qtuu_chol with
+              | Some a -> a
+              | None -> assert false
+            in
             let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
-            let qtux = qux in
+            let qtux = AD.Maths.(qux + (F mu * b *@ at)) in
             let _K =
-              AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg
+              (* AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg *)
+              triangular_solve qtuu_chol qtux |> AD.Maths.transpose |> AD.Maths.neg
             in
             let _k =
-              AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu))
+              (* AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu)) *)
+              triangular_solve qtuu_chol (AD.Maths.transpose qu)
               |> AD.Maths.transpose
               |> AD.Maths.neg
             in

@@ -113,11 +113,14 @@ let _ = save_results (in_dir "init") init_prms data
 
 module Optimizer = Opt.Adam.Make (Model.P)
 
-let config _k = Opt.Adam.{ default_config with learning_rate = Some 0.01 }
+let config k =
+  Opt.Adam.
+    { default_config with learning_rate = Some Float.(0.01 / sqrt (1. + of_int k)) }
+
 
 let rec iter ~k state =
   let prms = C.broadcast (Optimizer.v state) in
-  (* if Int.(k % 200 = 0) then save_results (in_dir "final") prms data; *)
+  if Int.(k % 200 = 0) then save_results (in_dir "final") prms data;
   let loss, g =
     Model.elbo_gradient ~n_samples:10 ~mini_batch:8 ~conv_threshold:1E-4 ~reg prms data
   in

@@ -30,12 +30,12 @@ struct
     ; c_mask = None
     ; bias = Prms.create (AD.Mat.create 1 n_output bias)
     ; variances =
-        Prms.create ~above:(F 0.001) (AD.pack_arr (Mat.create 1 n_output sigma2))
+        Prms.create ~above:(F 0.001) (AD.pack_arr (AA.create [| 1; n_output |] sigma2))
     }
 
 
   let save_data ?prefix data =
-    Mat.save_txt ~out:(with_prefix ?prefix label) (AD.unpack_arr data)
+    AA.save_txt ~out:(with_prefix ?prefix label) (AD.unpack_arr data)
 
 
   let data_slice ~k data = get_slice [ [ k ] ] data
@@ -155,7 +155,7 @@ struct
 
 
   let save_data ?prefix data =
-    Mat.save_txt ~out:(with_prefix ?prefix label) (AD.unpack_arr data)
+    AA.save_txt ~out:(with_prefix ?prefix label) (AD.unpack_arr data)
 
 
   let data_slice ~k data = get_slice [ [ k ] ] data
@@ -201,7 +201,7 @@ struct
     let c_t = transpose c in
     fun ~data_t ->
       let logfact =
-        AD.pack_arr (Mat.map (fun x -> logfact Int.(of_float x)) (AD.unpack_arr data_t))
+        AD.pack_arr (AA.map (fun x -> logfact Int.(of_float x)) (AD.unpack_arr data_t))
       in
       fun ~k:_ ~z_t ->
         let rate_t = dt * prms.gain * link_function ((z_t *@ c_t) + prms.bias) in
@@ -255,7 +255,7 @@ struct
     let n = AD.Mat.col_num c in
     fun ~data ->
       let logfact =
-        AD.pack_arr (Mat.map (fun x -> logfact Int.(of_float x)) (AD.unpack_arr data))
+        AD.pack_arr (AA.map (fun x -> logfact Int.(of_float x)) (AD.unpack_arr data))
       in
       let data = AD.expand0 data in
       fun ~z ->

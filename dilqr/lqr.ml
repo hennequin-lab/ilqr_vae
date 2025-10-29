@@ -14,7 +14,7 @@ module Make (A : Prms.Intf.A) = struct
     ; f : AD.t
     }
 
-  let is_pos_def x =
+  let _is_pos_def x =
     try
       ignore (AD.Linalg.chol x);
       true
@@ -36,8 +36,8 @@ module Make (A : Prms.Intf.A) = struct
           let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
           let quu = AD.Maths.((quu + transpose quu) / F 2.) in
           let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
-          let _, svs, _ = AD.Linalg.svd (AD.primal' qtuu) in
-          if not (is_pos_def (AD.primal' qtuu) && A.min' (AD.unpack_arr svs) > 1E-8)
+          let _, svs, _ = AD.Linalg.svd qtuu in
+          if not (_is_pos_def (AD.primal' qtuu) && A.min' (AD.unpack_arr svs) > 1E-8)
           then (
             if mu > 0. then Printf.printf "Regularizing... mu = %f \n%!" mu;
             backward
@@ -59,8 +59,8 @@ module Make (A : Prms.Intf.A) = struct
             let vxx = AD.Maths.((vxx + transpose vxx) / F 2.) in
             let vx = AD.Maths.(qx + (qu *@ transpose _K)) in
             let acc = (s, (_K, _k)) :: acc in
-            let df1 = AD.Maths.(df1 + sum' (_k *@ quu *@ transpose _k)) in
-            let df2 = AD.Maths.(df2 + sum' (_k *@ transpose quu)) in
+            let df1 = AD.Maths.(df1 + sum' (_k * qu)) in
+            let df2 = AD.Maths.(df2 + sum' (_k * (quu *@ transpose _k))) in
             backward (delta, mu) (k - 1, vxx, vx, df1, df2, acc) tl)
         | [] -> k, vxx, vx, df1, df2, acc
       in

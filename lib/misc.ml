@@ -1,7 +1,7 @@
 open Base
 
 (* change this AA module to change the precision globally *)
-module AA = Prms.Intf.D
+module AA = Prms.Intf.S
 module DILQR = Dilqr.Default.Make (AA)
 module Prms = Prms.Make (AA)
 module Opt = Opt.Make (AA)
@@ -12,7 +12,7 @@ module AD = struct
   module Mat = struct
     include Mat
 
-    let create n m x = pack_arr (Owl.Mat.create n m x)
+    let create n m x = pack_arr (AA.create [| n; m |] x)
   end
 
   let print_shape ~label x =
@@ -37,7 +37,7 @@ module AD = struct
   and d_requad x = Stdlib.Lazy.force _d_requad x
   and d2_requad x = Stdlib.Lazy.force _d2_requad x
   and rq x = Float.(0.5 * (x + sqrt (4. + square x)))
-  and rqv x = Owl.Mat.(0.5 $* x + sqrt (4. $+ sqr x))
+  and rqv x = AA.(0.5 $* x + sqrt (4. $+ sqr x))
 
   and drq x =
     let tmp = Float.(sqrt (4. + square x)) in
@@ -50,8 +50,8 @@ module AD = struct
 
 
   and drq_arr x =
-    let tmp = Owl.Mat.(sqrt (4. $+ sqr x)) in
-    Owl.Mat.(0.5 $* (1. $+ x / tmp))
+    let tmp = AA.(sqrt (4. $+ sqr x)) in
+    AA.(0.5 $* (1. $+ x / tmp))
 
 
   and ddrq x =
@@ -61,9 +61,9 @@ module AD = struct
 
 
   and ddrq_arr x =
-    let tmp = Owl.Mat.(4. $+ sqr x) in
-    let tmp = Owl.Mat.(tmp * sqrt tmp) in
-    Owl.Mat.(2. $/ tmp)
+    let tmp = AA.(4. $+ sqr x) in
+    let tmp = AA.(tmp * sqrt tmp) in
+    AA.(2. $/ tmp)
 
 
   and ddrqv x =

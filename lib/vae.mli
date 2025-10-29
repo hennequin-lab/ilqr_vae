@@ -61,7 +61,7 @@ module Make
     -> ?beta:Float.t
     -> prms:P.t'
     -> L.data data
-    -> AD.t * Owl.Mat.mat
+    -> AD.t * AA.arr
 
   (* returns [Some gradient] at the root note, [None] elsewhere *)
   val elbo_gradient

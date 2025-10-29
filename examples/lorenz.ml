@@ -1,5 +1,4 @@
 open Base
-open Owl
 open Ilqr_vae
 open Misc
 open Lorenz_common
@@ -45,8 +44,7 @@ let data =
         |> (fun v -> AA.((v - mean ~axis:0 v) / sqrt (var ~axis:0 v)))
         |> (fun v -> AA.reshape v [| -1; setup.n_steps; 3 |])
         |> (fun v ->
-        Array.init (2 * setup.n_trials) ~f:(fun k ->
-          Arr.(squeeze (get_slice [ [ k ] ] v))))
+        Array.init (2 * setup.n_trials) ~f:(fun k -> AA.(squeeze (get_slice [ [ k ] ] v))))
         |> Array.map ~f:(fun z ->
           let o = AA.(z + gaussian ~sigma:noise_std (shape z)) in
           (* here I'm hijacking z to store the Lorenz traj *)
@@ -102,9 +100,9 @@ let save_results prefix prms data =
       let us, zs, os = Model.predictions ~n_samples:100 ~prms mu in
       let process label a =
         let a = AD.unpack_arr a in
-        Owl.Arr.(mean ~axis:2 a @|| var ~axis:2 a)
-        |> (fun z -> Owl.Arr.reshape z [| setup.n_steps; -1 |])
-        |> Mat.save_txt ~out:(file (Printf.sprintf "predicted_%s_%i" label i))
+        AA.(mean ~axis:2 a @|| var ~axis:2 a)
+        |> (fun z -> AA.reshape z [| setup.n_steps; -1 |])
+        |> AA.save_txt ~out:(file (Printf.sprintf "predicted_%s_%i" label i))
       in
       process "u" us;
       process "z" zs;
@@ -119,7 +117,7 @@ let config _k = Opt.Adam.{ default_config with learning_rate = Some 0.01 }
 
 let rec iter ~k state =
   let prms = C.broadcast (Optimizer.v state) in
-  if Int.(k % 200 = 0) then save_results (in_dir "final") prms data;
+  (* if Int.(k % 200 = 0) then save_results (in_dir "final") prms data; *)
   let loss, g =
     Model.elbo_gradient ~n_samples:10 ~mini_batch:8 ~conv_threshold:1E-4 ~reg prms data
   in

@@ -137,12 +137,12 @@ struct
       | None -> 1
       | Some i -> i
     in
-    let xi = Mat.(gaussian Int.(n_steps - i) m * AD.unpack_arr sigma) in
+    let xi = AA.(gaussian [| Int.(n_steps - i); m |] * AD.unpack_arr sigma) in
     let u = Stats.chi2_rvs ~df:(AD.unpack_flt nu) in
     let z = Float.(sqrt (AD.unpack_flt nu / u)) in
-    let z = Mat.(z $* xi) in
-    let z0 = Mat.(gaussian i m * AD.unpack_arr prms.first_step) in
-    AD.pack_arr (Mat.concatenate ~axis:0 [| z0; z |])
+    let z = AA.(z $* xi) in
+    let z0 = AA.(gaussian [| i; m |] * AD.unpack_arr prms.first_step) in
+    AD.pack_arr (AA.concatenate ~axis:0 [| z0; z |])
 
 
   let neg_logp_t ~prms =
@@ -205,11 +205,11 @@ struct
       let sigma2 = sqr sigma in
       fun ~k ~x:_ ~u ->
         let stu =
-          let u_over_s = u / sigma in
-          let tau = F 1. + (l2norm_sqr' u_over_s / nu) in
+          let u_over_s2 = u / sigma2 in
+          let tau = F 1. + (l2norm_sqr' u_over_s2 / nu) in
           let cst = F 2. * nu_plus_m_half / nu / sqr tau in
           let term1 = diagm (tau / sigma2) in
-          let term2 = F 2. * (transpose u_over_s *@ u_over_s) / nu in
+          let term2 = F 2. * (transpose u_over_s2 *@ u_over_s2) / nu in
           cst * (term1 - term2)
         in
         match X.n_beg with

@@ -61,12 +61,14 @@ struct
        where W = alpha*I + S *)
     let d =
       let tmp = Float.(exp (-2. * dt_over_tau * (1.0 - alpha))) in
-      Mat.init_2d 1 n (fun _ _ -> Float.(tmp / (1. - tmp)))
+      AA.init [| 1; n |] (fun _ -> Float.(tmp / (1. - tmp)))
     in
     let u = AD.Mat.eye n in
     let q =
-      let s = Mat.(Float.(beta * dt_over_tau / sqrt (2. * of_int n)) $* gaussian n n) in
-      Linalg.D.expm Mat.(s - transpose s)
+      let s =
+        AA.(Float.(beta * dt_over_tau / sqrt (2. * of_int n)) $* gaussian [| n; n |])
+      in
+      AA.Linalg.expm AA.(s - transpose s)
     in
     let b = if n = m then None else Some (Prms.create (AD.Mat.gaussian m n)) in
     { d = Prms.create ~above:(F 1E-5) (AD.pack_arr d)

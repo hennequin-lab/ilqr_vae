@@ -7,7 +7,7 @@ include Vae_intf
    ------------------------------------- *)
 
 module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
-  module G = Generative_P.Make (U.P) (D.P) (L.P)
+  module P = ILQR_P.Make (U.P) (D.P) (L.P)
 
   let linesearch = U.requires_linesearch || D.requires_linesearch || L.requires_linesearch
 
@@ -24,9 +24,8 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
         ~prms
         data
     =
-    let open Generative_P in
     let module M = struct
-      type theta = G.t'
+      type theta = P.t'
 
       let primal' = primal'
 
@@ -166,6 +165,7 @@ end
 
 module Make
     (U : Prior.T)
+    (UR : Prior.T)
     (D : Dynamics.T)
     (L : Likelihood.T)
     (X : sig
@@ -177,33 +177,29 @@ module Make
      end) =
 struct
   open X
-  module G = Generative_P.Make (U.P) (D.P) (L.P)
-  module R = Recognition_P.Make (G) (Covariance_intf.P)
-  module P = VAE_P.Make (G) (R)
+  module P = VAE_P.Make (U.P) (UR.P) (D.P) (L.P) (Covariance.P)
   module Integrate = Dynamics.Integrate (D)
-  module Ilqr = ILQR (U) (D) (L)
+  module Ilqr = ILQR (UR) (D) (L)
   open VAE_P
 
   let n_beg = Option.value_map n_beg ~default:1 ~f:(fun i -> i)
 
-  let init ?(sigma = 1.) generative : P.t =
-    let recognition : R.t =
-      Recognition_P.
-        { generative
-        ; space_cov = Covariance.init ~pin_diag:true ~sigma2:1. m
-        ; time_cov =
-            Covariance.init
-              ~no_triangle:diag_time_cov
-              ~pin_diag:false
-              ~sigma2:Float.(square sigma)
-              (n_steps + n_beg - 1)
-        }
-    in
-    { generative; recognition }
+  let init ?(sigma = 1.) ~prior ~prior_recog ~dynamics ~likelihood () : P.t =
+    { prior
+    ; prior_recog
+    ; dynamics
+    ; likelihood
+    ; space_cov = Covariance.init ~pin_diag:true ~sigma2:1. m
+    ; time_cov =
+        Covariance.init
+          ~no_triangle:diag_time_cov
+          ~pin_diag:false
+          ~sigma2:Float.(square sigma)
+          (n_steps + n_beg - 1)
+    }
 
 
   let sample_generative ~prms =
-    let open Generative_P in
     let u = U.sample ~prms:prms.prior ~n_steps ~m in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:(AD.expand0 u) |> AD.squeeze0 in
     let o = L.sample ~prms:prms.likelihood ~z in
@@ -211,7 +207,7 @@ struct
 
 
   (* NON-DIFFERENTIABLE *)
-  let sample_generative_autonomous ~sigma ~(prms : G.t') =
+  let sample_generative_autonomous ~sigma ~(prms : P.t') =
     let u =
       let u0 = AA.gaussian ~sigma [| 1; m |] in
       let u_rest = AA.zeros [| n_steps - 1; m |] in
@@ -223,13 +219,15 @@ struct
 
 
   let logp ~(prms : P.t') data =
-    let prms = prms.generative in
     L.logp ~prms:prms.likelihood ~z:(Option.value_exn data.z) ~data:data.o
 
 
-  let primal' = G.map ~f:AD.primal'
+  let primal' = Ilqr.P.map ~f:AD.primal'
 
-  let posterior_mean ?saving_iter ?conv_threshold ?u_init ~(prms : G.t') data =
+  let posterior_mean ?saving_iter ?conv_threshold ?u_init ~(prms : P.t') data =
+    let ilqr_prms : Ilqr.P.t' =
+      { prior = prms.prior_recog; dynamics = prms.dynamics; likelihood = prms.likelihood }
+    in
     Ilqr.solve
       ?saving_iter
       ?conv_threshold
@@ -239,12 +237,11 @@ struct
       ~n
       ~m
       ~n_steps
-      ~prms
+      ~prms:ilqr_prms
       data
 
 
   let sample_recognition ~(prms : P.t') =
-    let prms = prms.recognition in
     let chol_space = Covariance.to_chol_factor prms.space_cov in
     let chol_time_t = Covariance.to_chol_factor prms.time_cov in
     fun ~mu_u n_samples ->
@@ -269,15 +266,13 @@ struct
 
   let predictions ?(pre = true) ~n_samples ~prms mu_u =
     let u = sample_recognition ~prms ~mu_u n_samples in
-    let z = Integrate.integrate ~prms:prms.generative.dynamics ~n ~u in
+    let z = Integrate.integrate ~prms:prms.dynamics ~n ~u in
     let z = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] z in
     let u = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] u in
     let o =
       Array.init n_samples ~f:(fun i ->
         let z = AD.Maths.(reshape (get_slice [ [ i ] ] z) [| n_steps; n |]) in
-        let o =
-          (if pre then L.pre_sample else L.sample) ~prms:prms.generative.likelihood ~z
-        in
+        let o = (if pre then L.pre_sample else L.sample) ~prms:prms.likelihood ~z in
         o
         |> L.to_mat_list
         |> Array.of_list
@@ -298,7 +293,7 @@ struct
 
   let lik_term ~prms =
     let logp = logp ~prms in
-    let dyn = Integrate.integrate ~prms:prms.generative.dynamics in
+    let dyn = Integrate.integrate ~prms:prms.dynamics in
     fun samples data ->
       let n_samples = (AD.shape samples).(0) in
       let z = dyn ~n ~u:samples in
@@ -310,18 +305,20 @@ struct
   let kl_term ~(prms : P.t') =
     match U.kl_to_gaussian with
     | `sampling_based ->
-      let logp = U.logp ~prms:prms.generative.prior ~n_steps in
+      let logp = U.logp ~prms:prms.prior ~n_steps in
       let logq =
-        let recog = R.map ~f:AD.primal' prms.recognition in
-        let c_space = Covariance.to_chol_factor recog.space_cov in
-        let c_time = Covariance.to_chol_factor recog.time_cov in
+        (* sticking the landing... *)
+        let space_cov = Covariance.P.map ~f:AD.primal' prms.space_cov in
+        let time_cov = Covariance.P.map ~f:AD.primal' prms.time_cov in
+        let c_space = Covariance.to_chol_factor space_cov in
+        let c_time = Covariance.to_chol_factor time_cov in
         let m_ = AD.Mat.row_num c_space in
         let m = Float.of_int m_ in
         let t = Float.of_int (AD.Mat.row_num c_time) in
         let cst = Float.(m * t * log Owl.Const.pi2) in
         let log_det_term =
-          let d_space = recog.space_cov.d in
-          let d_time = recog.time_cov.d in
+          let d_space = space_cov.d in
+          let d_time = time_cov.d in
           AD.Maths.(F 2. * ((F m * sum' (log d_time)) + (F t * sum' (log d_space))))
         in
         fun mu_u u ->
@@ -360,12 +357,7 @@ struct
         let logpu = logp u in
         AD.Maths.((logqu - logpu) / F Float.(of_int n_samples))
     | `direct f ->
-      fun mu_u _ ->
-        f
-          ~prms:prms.generative.prior
-          ~mu:mu_u
-          ~space:prms.recognition.space_cov
-          ~time:prms.recognition.time_cov
+      fun mu_u _ -> f ~prms:prms.prior ~mu:mu_u ~space:prms.space_cov ~time:prms.time_cov
 
 
   let elbo ?conv_threshold ~mu_u ~n_samples ?(beta = 1.) ~(prms : P.t') =
@@ -376,8 +368,7 @@ struct
       let mu_u =
         match mu_u with
         | `known mu_u -> mu_u
-        | `guess u_init ->
-          posterior_mean ?conv_threshold ?u_init ~prms:prms.generative data
+        | `guess u_init -> posterior_mean ?conv_threshold ?u_init ~prms data
       in
       let samples = sample_recognition ~mu_u n_samples in
       let lik_term = lik_term samples data in
@@ -423,10 +414,7 @@ struct
               (* loss normalised by problem size *)
               let loss =
                 Maths.(
-                  neg elbo
-                  / F
-                      Float.(
-                        of_int Int.(n_steps * L.size ~prms:prms.generative.likelihood)))
+                  neg elbo / F Float.(of_int Int.(n_steps * L.size ~prms:prms.likelihood)))
               in
               (* optionally add regularizer *)
               let loss =

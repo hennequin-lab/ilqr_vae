@@ -32,6 +32,15 @@ module Nonlinear (X : sig
   val init : ?radius:float -> n:int -> m:int -> unit -> P.t
 end
 
+module InvertedBottleneck (X : sig
+    val phi : (AD.t -> AD.t) * (AD.t -> AD.t)
+    val n_beg : int Option.t
+  end) : sig
+  include T with module P = Dynamics_intf.InvertedBottleneck_P
+
+  val init : ?radius:float -> ?decay:float -> n:int -> nh:int -> m:int -> unit -> P.t
+end
+
 (** Mini-GRU (Heck, 2017) *)
 module MGU (X : sig
     val phi : AD.t -> AD.t

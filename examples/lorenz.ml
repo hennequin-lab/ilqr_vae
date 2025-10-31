@@ -8,7 +8,7 @@ let dir = Cmdargs.(get_string "-d" |> force ~usage:"-d [dir]")
 let in_dir = Printf.sprintf "%s/%s" dir
 let reuse_data = Cmdargs.check "-reuse_data"
 let max_iter = Cmdargs.(get_int "-max_iter" |> default 40_000)
-let setup = { n = 20; m = 5; n_trials = 112; n_steps = 100 }
+let setup = { n = 3; nh = 64; m = 3; n_trials = 112; n_steps = 100 }
 let n_output = 3
 let noise_std = 0.1
 
@@ -21,8 +21,8 @@ open M
 
 let reg ~(prms : Model.P.t') =
   let z = Float.(1e-5 / of_int Int.(setup.n * setup.n)) in
-  let part1 = AD.Maths.(F z * l2norm_sqr' prms.generative.dynamics.uh) in
-  let part2 = AD.Maths.(F z * l2norm_sqr' prms.generative.dynamics.uf) in
+  let part1 = AD.Maths.(F z * l2norm_sqr' prms.dynamics.a1) in
+  let part2 = AD.Maths.(F z * l2norm_sqr' prms.dynamics.a2) in
   AD.Maths.(part1 + part2)
 
 
@@ -74,15 +74,18 @@ let _ = C.print_endline "Data generated and broadcast."
 
 let init_prms =
   C.broadcast' (fun () ->
-    let generative_prms =
+    match Cmdargs.get_string "-reuse" with
+    | Some file -> Misc.read_bin file
+    | None ->
       let n = setup.n
+      and nh = setup.nh
       and m = setup.m in
-      let prior = U.init ~spatial_std:1.0 ~nu:20. ~m () in
-      let dynamics = D.init ~n ~m () in
+      (* let prior = U.init ~spatial_std:1.0 ~nu:20. ~m () in *)
+      let prior = U.init ~spatial_std:1.0 ~m () in
+      let prior_recog = UR.init ~spatial_std:1.0 ~m () in
+      let dynamics = D.init ~radius:0.01 ~decay:0.2 ~n ~nh ~m () in
       let likelihood = L.init ~sigma2:Float.(square noise_std) ~n ~n_output () in
-      Vae_intf.Generative_P.{ prior; dynamics; likelihood }
-    in
-    Model.init generative_prms)
+      Model.init ~prior ~prior_recog ~dynamics ~likelihood ())
 
 
 let save_results prefix prms data =
@@ -95,7 +98,7 @@ let save_results prefix prms data =
   Array.iteri data ~f:(fun i dat_trial ->
     if Int.(i % C.n_nodes = C.rank)
     then (
-      let mu = Model.posterior_mean ~prms:prms.generative dat_trial in
+      let mu = Model.posterior_mean ~prms dat_trial in
       AA.save_txt ~out:(file (Printf.sprintf "posterior_u_%i" i)) (AD.unpack_arr mu);
       let us, zs, os = Model.predictions ~n_samples:100 ~prms mu in
       let process label a =
@@ -115,7 +118,11 @@ module Optimizer = Opt.Adam.Make (Model.P)
 
 let config k =
   Opt.Adam.
-    { default_config with learning_rate = Some Float.(0.01 / sqrt (1. + of_int k)) }
+    { default_config with
+      learning_rate = Some Float.(0.04 / sqrt (1. + of_int k))
+    ; beta2 = 0.99
+    ; epsilon = 1e-7
+    }
 
 
 let rec iter ~k state =

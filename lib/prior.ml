@@ -206,7 +206,7 @@ struct
       fun ~k ~x:_ ~u ->
         let stu =
           let u_over_s2 = u / sigma2 in
-          let tau = F 1. + (l2norm_sqr' u_over_s2 / nu) in
+          let tau = F 1. + l2norm_sqr' (u / sigma / nu) in
           let cst = F 2. * nu_plus_m_half / nu / sqr tau in
           let term1 = diagm (tau / sigma2) in
           let term2 = F 2. * (transpose u_over_s2 *@ u_over_s2) / nu in

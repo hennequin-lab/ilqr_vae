@@ -2,24 +2,25 @@ open Misc
 include module type of Vae_intf
 
 module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) : sig
-  module G : module type of Generative_P.Make (U.P) (D.P) (L.P)
+  module P : module type of ILQR_P.Make (U.P) (D.P) (L.P)
 
   val solve
     :  ?conv_threshold:float
     -> ?n_beg:int
     -> ?saving_iter:string
     -> u_init:AA.arr option
-    -> primal':(G.t' -> G.t')
+    -> primal':(P.t' -> P.t')
     -> n:int
     -> m:int
     -> n_steps:int
-    -> prms:G.t'
+    -> prms:P.t'
     -> L.data data
     -> AD.t
 end
 
 module Make
     (U : Prior.T)
+    (UR : Prior.T)
     (D : Dynamics.T)
     (L : Likelihood.T)
     (X : sig
@@ -29,19 +30,27 @@ module Make
        val n_beg : int Option.t
        val diag_time_cov : bool
      end) : sig
-  module G : module type of Generative_P.Make (U.P) (D.P) (L.P)
-  module R : module type of Recognition_P.Make (G) (Covariance_intf.P)
-  module P : module type of VAE_P.Make (G) (R)
+  module P : module type of VAE_P.Make (U.P) (UR.P) (D.P) (L.P) (Covariance.P)
+  module Integrate : module type of Dynamics.Integrate (D)
+  module Ilqr : module type of ILQR (UR) (D) (L)
 
-  val init : ?sigma:float -> G.t -> P.t
-  val sample_generative : prms:G.t' -> L.data data
-  val sample_generative_autonomous : sigma:float -> prms:G.t' -> L.data data
+  val init
+    :  ?sigma:float
+    -> prior:U.P.t
+    -> prior_recog:UR.P.t
+    -> dynamics:D.P.t
+    -> likelihood:L.P.t
+    -> unit
+    -> P.t
+
+  val sample_generative : prms:P.t' -> L.data data
+  val sample_generative_autonomous : sigma:float -> prms:P.t' -> L.data data
 
   val posterior_mean
     :  ?saving_iter:string
     -> ?conv_threshold:float
     -> ?u_init:AA.arr
-    -> prms:G.t'
+    -> prms:P.t'
     -> L.data data
     -> AD.t
 

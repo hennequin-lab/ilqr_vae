@@ -1,5 +1,4 @@
 open Base
-open Owl
 open Misc
 
 module type T = Dynamics_intf.T
@@ -230,6 +229,107 @@ struct
   let dyn_u =
     let dyn_u ~theta =
       let n = AD.Mat.row_num theta.a in
+      let b =
+        match b_rescaled theta.b with
+        | None -> AD.Mat.eye n
+        | Some b -> b
+      in
+      let m = AD.Mat.row_num b in
+      let beg_bs = generate_bs ~n ~m in
+      fun ~k ~x:_ ~u:_ ->
+        match beg_bs with
+        | None -> b
+        | Some (nb, beg_b) -> if Int.(k < nb) then beg_b.(k) else b
+    in
+    Some dyn_u
+end
+
+module InvertedBottleneck (X : sig
+    val phi : (AD.t -> AD.t) * (AD.t -> AD.t)
+    val n_beg : int Option.t
+  end) =
+struct
+  module P = Dynamics_intf.InvertedBottleneck_P
+  open P
+  open X
+  open AD.Maths
+
+  let phi, d_phi = phi
+  let requires_linesearch = true
+
+  let init ?(radius = 0.1) ?(decay = 0.9) ~n ~nh ~m () =
+    let sigma = Float.(1. / sqrt (of_int n)) in
+    let sigma_h = Float.(radius / sqrt (of_int nh)) in
+    { a1 = Prms.create (AD.Mat.gaussian ~sigma n nh)
+    ; a2 = Prms.create (AD.Mat.gaussian ~sigma:sigma_h nh n)
+    ; bias1 = Prms.create (AD.Mat.gaussian 1 nh)
+    ; bias2 = Prms.create (AD.Mat.zeros 1 n)
+    ; b = Some (Prms.create (AD.Mat.gaussian ~sigma:Float.(1. / sqrt (of_int m)) m n))
+    ; decay = Prms.create (AD.F decay)
+    }
+
+
+  let generate_bs ~n ~m =
+    Option.map X.n_beg ~f:(fun nb ->
+      let nr = Int.(n / nb) in
+      assert (nr = m);
+      ( nb
+      , Array.init nb ~f:(fun i ->
+          let inr = Int.(i * nr) in
+          let rnr = Int.(n - ((i + 1) * nr)) in
+          AD.Maths.(
+            transpose
+              (concatenate
+                 ~axis:0
+                 [| AD.Mat.zeros inr m; AD.Mat.eye nr; AD.Mat.zeros rnr m |]))) ))
+
+
+  let u_eff ~prms =
+    match b_rescaled prms.b with
+    | None -> fun u -> u
+    | Some b -> fun u -> AD.Maths.(u *@ b)
+
+
+  let dyn ~theta =
+    let n = AD.Mat.row_num theta.a1 in
+    let m =
+      match theta.b with
+      | None -> n
+      | Some b -> AD.Mat.row_num b
+    in
+    let u_eff = u_eff ~prms:theta in
+    let beg_bs = generate_bs ~n ~m in
+    let default x u =
+      (theta.decay * x)
+      + (phi ((x *@ theta.a1) + theta.bias1) *@ theta.a2)
+      + theta.bias2
+      + u_eff u
+    in
+    fun ~k ~x ~u ->
+      match beg_bs with
+      | None -> default x u
+      | Some (nb, beg_b) -> if Int.(k < nb) then x + (u *@ beg_b.(k)) else default x u
+
+
+  let dyn_x =
+    let dyn_x ~theta =
+      let n = AD.Mat.row_num theta.a1 in
+      let id_n = AD.Mat.eye n in
+      let default x =
+        let h = (x *@ theta.a1) + theta.bias1 in
+        AD.Maths.((theta.a1 * d_phi h *@ theta.a2) + (theta.decay * id_n))
+      in
+      fun ~k ~x ~u:_ ->
+        match X.n_beg with
+        | None -> default x
+        | Some nb -> if Int.(k < nb) then id_n else default x
+    in
+    Some dyn_x
+
+
+  let dyn_u =
+    let dyn_u ~theta =
+      let n = AD.Mat.row_num theta.a1 in
       let b =
         match b_rescaled theta.b with
         | None -> AD.Mat.eye n

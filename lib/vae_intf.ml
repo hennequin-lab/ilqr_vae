@@ -7,8 +7,8 @@ type 'a data =
   ; o : 'a
   }
 
-module Generative_P = struct
-  type ('u, 'd, 'l) prm =
+module ILQR_P = struct
+  type ('u, 'd, 'l) p =
     { prior : 'u
     ; dynamics : 'd
     ; likelihood : 'l
@@ -16,19 +16,14 @@ module Generative_P = struct
   [@@deriving prms, accessors ~submodule:A]
 end
 
-module Recognition_P = struct
-  type ('g_opt, 'cov) prm =
-    { generative : 'g_opt
+module VAE_P = struct
+  type ('u, 'ur, 'd, 'l, 'cov) p =
+    { prior : 'u
+    ; prior_recog : 'ur
+    ; dynamics : 'd
+    ; likelihood : 'l
     ; space_cov : 'cov
     ; time_cov : 'cov
-    }
-  [@@deriving prms, accessors ~submodule:A]
-end
-
-module VAE_P = struct
-  type ('gen, 'recog) p =
-    { generative : 'gen
-    ; recognition : 'recog
     }
   [@@deriving prms, accessors ~submodule:A]
 end

@@ -35,12 +35,12 @@ end
 
 module InvertedBottleneck_P = struct
   type ('a, 'opt) prm =
-    { a1 : 'a
+    { a0 : 'a
+    ; a1 : 'a
     ; a2 : 'a
     ; bias1 : 'a
     ; bias2 : 'a
     ; b : 'opt
-    ; decay : 'a
     }
   [@@deriving prms, accessors ~submodule:A]
 

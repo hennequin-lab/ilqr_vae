@@ -25,8 +25,9 @@ struct
   let requires_linesearch = false
   let label = X.label
 
-  let init ?(sigma2 = 1.) ?(bias = 0.) ~n ~n_output () =
-    { c = Prms.create (AD.Mat.gaussian ~sigma:Float.(1. / sqrt (of_int n)) n_output n)
+  let init ?(scale = 1.) ?(sigma2 = 1.) ?(bias = 0.) ~n ~n_output () =
+    let sc = scale in
+    { c = Prms.create (AD.Mat.gaussian ~sigma:Float.(sc / sqrt (of_int n)) n_output n)
     ; c_mask = None
     ; bias = Prms.create (AD.Mat.create 1 n_output bias)
     ; variances =

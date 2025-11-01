@@ -6,7 +6,7 @@ open Vae
 
 let dir = Cmdargs.(get_string "-d" |> force ~usage:"-d [dir]")
 let in_dir = Printf.sprintf "%s/%s" dir
-let setup = { n = 3; nh = 64; m = 3; n_trials = 112; n_steps = 100 }
+let setup = { n = 3; nh = 128; m = 3; n_trials = 512; n_steps = 32 }
 
 module M = Make_model (struct
     let setup = setup
@@ -19,12 +19,10 @@ open M
    ----------------------------------------- *)
 
 let (prms_final : Model.P.t') =
-  C.broadcast' (fun () -> Misc.read_bin (in_dir "../good.bin") |> Model.P.value)
+  C.broadcast' (fun () -> Misc.read_bin (in_dir "../final.params.bin") |> Model.P.value)
 
 
 let _ = print [%message (Model.P.numel' prms_final : int)]
-
-(* |> Model.P.value *)
 
 (*
    (* -----------------------------------------

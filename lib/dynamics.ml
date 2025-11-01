@@ -257,15 +257,15 @@ struct
   let phi, d_phi = phi
   let requires_linesearch = true
 
-  let init ?(radius = 0.1) ?(decay = 0.9) ~n ~nh ~m () =
+  let init ?(radius = 0.1) ?(decay = 0.5) ~n ~nh ~m () =
     let sigma = Float.(1. / sqrt (of_int n)) in
     let sigma_h = Float.(radius / sqrt (of_int nh)) in
-    { a1 = Prms.create (AD.Mat.gaussian ~sigma n nh)
+    { a0 = Prms.create (F decay * AD.Mat.eye n)
+    ; a1 = Prms.create (AD.Mat.gaussian ~sigma n nh)
     ; a2 = Prms.create (AD.Mat.gaussian ~sigma:sigma_h nh n)
     ; bias1 = Prms.create (AD.Mat.gaussian 1 nh)
     ; bias2 = Prms.create (AD.Mat.zeros 1 n)
     ; b = Some (Prms.create (AD.Mat.gaussian ~sigma:Float.(1. / sqrt (of_int m)) m n))
-    ; decay = Prms.create (AD.F decay)
     }
 
 
@@ -300,7 +300,7 @@ struct
     let u_eff = u_eff ~prms:theta in
     let beg_bs = generate_bs ~n ~m in
     let default x u =
-      (theta.decay * x)
+      (x *@ theta.a0)
       + (phi ((x *@ theta.a1) + theta.bias1) *@ theta.a2)
       + theta.bias2
       + u_eff u
@@ -317,7 +317,7 @@ struct
       let id_n = AD.Mat.eye n in
       let default x =
         let h = (x *@ theta.a1) + theta.bias1 in
-        AD.Maths.((theta.a1 * d_phi h *@ theta.a2) + (theta.decay * id_n))
+        AD.Maths.((theta.a1 * d_phi h *@ theta.a2) + theta.a0)
       in
       fun ~k ~x ~u:_ ->
         match X.n_beg with

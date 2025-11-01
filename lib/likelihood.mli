@@ -12,7 +12,14 @@ module Gaussian (X : sig
      and type datum = AD.t
      and type data = AD.t
 
-  val init : ?sigma2:float -> ?bias:float -> n:int -> n_output:int -> unit -> P.t
+  val init
+    :  ?scale:float
+    -> ?sigma2:float
+    -> ?bias:float
+    -> n:int
+    -> n_output:int
+    -> unit
+    -> P.t
 end
 
 module Poisson (X : sig

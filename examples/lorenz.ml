@@ -8,7 +8,7 @@ let dir = Cmdargs.(get_string "-d" |> force ~usage:"-d [dir]")
 let in_dir = Printf.sprintf "%s/%s" dir
 let reuse_data = Cmdargs.check "-reuse_data"
 let max_iter = Cmdargs.(get_int "-max_iter" |> default 40_000)
-let setup = { n = 3; nh = 64; m = 3; n_trials = 112; n_steps = 100 }
+let setup = { n = 3; nh = 128; m = 3; n_trials = 512; n_steps = 32 }
 let n_output = 3
 let noise_std = 0.1
 
@@ -72,20 +72,17 @@ let _ = C.print_endline "Data generated and broadcast."
    -- Initialise parameters and train
    ----------------------------------------- *)
 
-let init_prms =
+let init_prms () =
   C.broadcast' (fun () ->
-    match Cmdargs.get_string "-reuse" with
-    | Some file -> Misc.read_bin file
-    | None ->
-      let n = setup.n
-      and nh = setup.nh
-      and m = setup.m in
-      (* let prior = U.init ~spatial_std:1.0 ~nu:20. ~m () in *)
-      let prior = U.init ~spatial_std:1.0 ~m () in
-      let prior_recog = UR.init ~spatial_std:1.0 ~m () in
-      let dynamics = D.init ~radius:0.01 ~decay:0.2 ~n ~nh ~m () in
-      let likelihood = L.init ~sigma2:Float.(square noise_std) ~n ~n_output () in
-      Model.init ~prior ~prior_recog ~dynamics ~likelihood ())
+    let n = setup.n
+    and nh = setup.nh
+    and m = setup.m in
+    (* let prior = U.init ~spatial_std:1.0 ~nu:20. ~m () in *)
+    let prior = U.init ~spatial_std:1.0 ~m () in
+    let prior_recog = UR.init ~spatial_std:1.0 ~m () in
+    let dynamics = D.init ~radius:0.01 ~decay:0.1 ~n ~nh ~m () in
+    let likelihood = L.init ~scale:1. ~sigma2:1. ~n ~n_output () in
+    Model.init ~prior ~prior_recog ~dynamics ~likelihood ())
 
 
 let save_results prefix prms data =
@@ -112,24 +109,16 @@ let save_results prefix prms data =
       Array.iter ~f:(fun (label, x) -> process label x) os))
 
 
-let _ = save_results (in_dir "init") init_prms data
+module Optimizer = Opt.Shampoo.Make (Model.P)
 
-module Optimizer = Opt.Adam.Make (Model.P)
-
-let config k =
-  Opt.Adam.
-    { default_config with
-      learning_rate = Some Float.(0.04 / sqrt (1. + of_int k))
-    ; beta2 = 0.99
-    ; epsilon = 1e-7
-    }
-
+let config _k = Opt.Shampoo.{ beta = 0.95; learning_rate = Some 0.1 }
 
 let rec iter ~k state =
+  if k % 200 = 0 then Optimizer.save ~out:(in_dir "state.bin") state;
   let prms = C.broadcast (Optimizer.v state) in
   if Int.(k % 200 = 0) then save_results (in_dir "final") prms data;
   let loss, g =
-    Model.elbo_gradient ~n_samples:10 ~mini_batch:8 ~conv_threshold:1E-4 ~reg prms data
+    Model.elbo_gradient ~n_samples:100 ~mini_batch:8 ~conv_threshold:1E-4 ~reg prms data
   in
   (if C.first
    then AA.(save_txt ~append:true ~out:(in_dir "loss") (of_array [| loss |] [| 1; 1 |])));
@@ -142,5 +131,13 @@ let rec iter ~k state =
   if k < max_iter then iter ~k:(k + 1) state else Optimizer.v state
 
 
-let final_prms = iter ~k:0 (Optimizer.init init_prms)
+let final_prms =
+  let state =
+    match Cmdargs.get_string "-reuse" with
+    | Some file -> Optimizer.load file
+    | None -> Optimizer.init ~epsilon:1e-4 (init_prms ())
+  in
+  iter ~k:0 state
+
+
 let _ = save_results (in_dir "final") final_prms data

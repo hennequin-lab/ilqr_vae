@@ -31,7 +31,7 @@ struct
     end)
 
   module D = Dynamics.InvertedBottleneck (struct
-      let phi = AD.requad, AD.d_requad
+      let phi = AD.Maths.tanh, fun x -> AD.Maths.(F 1. - sqr (tanh x))
       let n_beg = P.n_beg
     end)
 

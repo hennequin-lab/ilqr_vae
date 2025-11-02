@@ -6,8 +6,6 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) : sig
 
   val solve
     :  ?conv_threshold:float
-    -> ?n_beg:int
-    -> ?saving_iter:string
     -> u_init:AA.arr option
     -> primal':(P.t' -> P.t')
     -> n:int
@@ -27,7 +25,6 @@ module Make
        val n : int
        val m : int
        val n_steps : int
-       val n_beg : int Option.t
        val diag_time_cov : bool
      end) : sig
   module P : module type of VAE_P.Make (U.P) (UR.P) (D.P) (L.P) (Covariance.P)
@@ -47,8 +44,7 @@ module Make
   val sample_generative_autonomous : sigma:float -> prms:P.t' -> L.data data
 
   val posterior_mean
-    :  ?saving_iter:string
-    -> ?conv_threshold:float
+    :  ?conv_threshold:float
     -> ?u_init:AA.arr
     -> prms:P.t'
     -> L.data data

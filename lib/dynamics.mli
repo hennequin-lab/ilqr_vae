@@ -6,9 +6,7 @@ module Integrate (D : T) : sig
   val integrate : prms:D.P.t' -> n:int -> u:AD.t -> AD.t
 end
 
-module Linear (X : sig
-    val n_beg : int Option.t
-  end) : sig
+module Linear : sig
   include T with module P = Dynamics_intf.Linear_P
 
   val init
@@ -25,44 +23,16 @@ end
 
 module Nonlinear (X : sig
     val phi : [ `linear | `nonlinear of (AD.t -> AD.t) * (AD.t -> AD.t) ]
-    val n_beg : int Option.t
   end) : sig
   include T with module P = Dynamics_intf.Nonlinear_P
 
   val init : ?radius:float -> n:int -> m:int -> unit -> P.t
 end
 
-module InvertedBottleneck (X : sig
+module Linear_nonlinear (X : sig
     val phi : (AD.t -> AD.t) * (AD.t -> AD.t)
-    val n_beg : int Option.t
   end) : sig
-  include T with module P = Dynamics_intf.InvertedBottleneck_P
+  include T with module P = Dynamics_intf.Linear_nonlinear_P
 
   val init : ?radius:float -> ?decay:float -> n:int -> nh:int -> m:int -> unit -> P.t
-end
-
-(** Mini-GRU (Heck, 2017) *)
-module MGU (X : sig
-    val phi : AD.t -> AD.t
-    val d_phi : AD.t -> AD.t
-    val sigma : AD.t -> AD.t
-    val d_sigma : AD.t -> AD.t
-    val n_beg : int Option.t
-  end) : sig
-  include T with module P = Dynamics_intf.MGU_P
-
-  val init : n:int -> m:int -> unit -> P.t
-end
-
-(** Mini-GRU, 2rd simplification (Heck, 2017) *)
-module MGU2 (X : sig
-    val phi : AD.t -> AD.t
-    val d_phi : AD.t -> AD.t
-    val sigma : AD.t -> AD.t
-    val d_sigma : AD.t -> AD.t
-    val n_beg : int Option.t
-  end) : sig
-  include T with module P = Dynamics_intf.MGU2_P
-
-  val init : n:int -> m:int -> unit -> P.t
 end

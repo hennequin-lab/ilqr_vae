@@ -51,17 +51,19 @@ module Make (A : Prms.Intf.A) : sig
     val differentiable_loss : theta:P.theta -> AD.t -> AD.t
 
     val learn
-      :  ?linesearch:bool
+      :  ?max_iter:int
+      -> ?conv_threshold:float
+      -> ?linesearch:bool
       -> theta:P.theta
-      -> stop:(int -> AD.t list -> bool)
       -> AD.t
       -> AD.t list
       -> AD.t list
 
     val ilqr
-      :  ?linesearch:bool
+      :  ?max_iter:int
+      -> ?conv_threshold:float
+      -> ?linesearch:bool
       -> theta:P.theta
-      -> stop:(int -> AD.t list -> bool)
       -> us:AD.t list
       -> x0:AD.t
       -> unit

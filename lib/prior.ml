@@ -4,10 +4,7 @@ open Owl
 
 module type T = Prior_intf.T
 
-module Gaussian (X : sig
-    val n_beg : int Option.t
-  end) =
-struct
+module Gaussian = struct
   module P = Prior_intf.Gaussian_P
   open P
   open AD.Maths
@@ -21,12 +18,10 @@ struct
     }
 
 
-  let n_beg = Option.value_map X.n_beg ~default:1 ~f:(fun i -> i)
-
   (* returns a column vector *)
   let temporal_stds ~prms ~n_steps =
-    let t1 = prms.first_bin * AD.Mat.ones n_beg 1 in
-    let t2 = AD.Mat.ones Int.(n_steps - n_beg) 1 in
+    let t1 = prms.first_bin * AD.Mat.ones 1 1 in
+    let t2 = AD.Mat.ones Int.(n_steps - 1) 1 in
     concat ~axis:0 t1 t2
 
 
@@ -66,24 +61,29 @@ struct
   let sample ~prms ~n_steps ~m =
     let ell_t = temporal_stds ~prms ~n_steps in
     let ell_s = prms.spatial_stds in
-    let xi = AD.(Mat.gaussian n_steps m) in
+    let xi = AD.Mat.gaussian n_steps m in
     ell_t * xi * ell_s
 
 
   let neg_logp_t ~prms =
     let ell_s = prms.spatial_stds in
     let m = AD.Mat.numel ell_s in
-    let cst = Float.(of_int m * log Const.pi2) in
+    let mlpi2 = Float.(of_int m * log Const.pi2) in
+    let ell_s_0 = prms.first_bin * ell_s in
+    let cst_0 = F mlpi2 + (F 2. * sum' (log ell_s_0)) in
+    let cst_k = F mlpi2 + (F 2. * sum' (log ell_s)) in
     fun ~k ~x:_ ~u ->
-      let sigma = if k < n_beg then prms.first_bin * ell_s else ell_s in
-      F 0.5 * (F cst + (F 2. * sum' (log sigma)) + l2norm_sqr' (u / sigma))
+      let sigma = if k = 0 then ell_s_0 else ell_s in
+      let cst = if k = 0 then cst_0 else cst_k in
+      F 0.5 * (cst + l2norm_sqr' (u / sigma))
 
 
   let neg_jac_t =
     let jac_t ~prms =
       let ell_s = prms.spatial_stds in
+      let ell_s_0 = prms.first_bin * ell_s in
       fun ~k ~x:_ ~u ->
-        let sigma = if k < n_beg then prms.first_bin * ell_s else ell_s in
+        let sigma = if k = 0 then ell_s_0 else ell_s in
         u / sqr sigma
     in
     Some jac_t
@@ -91,10 +91,10 @@ struct
 
   let neg_hess_t =
     let hess_t ~prms =
-      let ell_p_s = prms.spatial_stds in
-      fun ~k ~x:_ ~u:_ ->
-        let sigma = if k < n_beg then prms.first_bin * ell_p_s else ell_p_s in
-        diagm (F 1. / sqr sigma)
+      let sigma2 = sqr prms.spatial_stds in
+      let h_0 = diagm (F 1. / (sqr prms.first_bin * sigma2)) in
+      let h_k = diagm (F 1. / sigma2) in
+      fun ~k ~x:_ ~u:_ -> if k = 0 then h_0 else h_k
     in
     Some hess_t
 
@@ -103,10 +103,7 @@ struct
   let logp ~prms:_ = assert false
 end
 
-module Student (X : sig
-    val n_beg : int Option.t
-  end) =
-struct
+module Student = struct
   module P = Prior_intf.Student_P
   open P
   open AD.Maths
@@ -132,16 +129,11 @@ struct
   (* non-differentiable *)
   let sample ~prms ~n_steps ~m =
     let nu, sigma = get_eff_prms ~prms in
-    let i =
-      match X.n_beg with
-      | None -> 1
-      | Some i -> i
-    in
-    let xi = AA.(gaussian [| Int.(n_steps - i); m |] * AD.unpack_arr sigma) in
+    let xi = AA.(gaussian [| Int.(n_steps - 1); m |] * AD.unpack_arr sigma) in
     let u = Stats.chi2_rvs ~df:(AD.unpack_flt nu) in
     let z = Float.(sqrt (AD.unpack_flt nu / u)) in
     let z = AA.(z $* xi) in
-    let z0 = AA.(gaussian [| i; m |] * AD.unpack_arr prms.first_step) in
+    let z0 = AA.(gaussian [| 1; m |] * AD.unpack_arr prms.first_step) in
     AD.pack_arr (AA.concatenate ~axis:0 [| z0; z |])
 
 
@@ -160,19 +152,11 @@ struct
       cst1 + cst2 + cst3
     in
     fun ~k ~x:_ ~u ->
-      let stu =
+      if k = 0
+      then F 0.5 * (F cst0 + (F 2. * sum' (log sigma0)) + l2norm_sqr' (u / sigma0))
+      else (
         let utilde = u / sigma in
-        cst + (nu_plus_m_half * log (F 1. + (l2norm_sqr' utilde / nu)))
-      in
-      match X.n_beg with
-      | None ->
-        if k = 0
-        then F 0.5 * (F cst0 + (F 2. * sum' (log sigma0)) + l2norm_sqr' (u / sigma0))
-        else stu
-      | Some nb ->
-        if k < nb
-        then F 0.5 * (F cst0 + (F 2. * sum' (log sigma0)) + l2norm_sqr' (u / sigma0))
-        else stu
+        cst + (nu_plus_m_half * log (F 1. + (l2norm_sqr' utilde / nu))))
 
 
   let neg_jac_t =
@@ -190,9 +174,7 @@ struct
           let tmp' = F 2. * u / sigma2 / nu in
           nu_plus_m_half * tmp' / tmp
         in
-        match X.n_beg with
-        | None -> if k = 0 then u / sqr prms.first_step else stu
-        | Some nb -> if k < nb then u / sqr prms.first_step else stu
+        if k = 0 then u / sqr prms.first_step else stu
     in
     Some jac_t
 
@@ -212,9 +194,7 @@ struct
           let term2 = F 2. * (transpose u_over_s2 *@ u_over_s2) / nu in
           cst * (term1 - term2)
         in
-        match X.n_beg with
-        | None -> if k = 0 then AD.Maths.(diagm (F 1. / sqr prms.first_step)) else stu
-        | Some nb -> if k < nb then AD.Maths.(diagm (F 1. / sqr prms.first_step)) else stu
+        if k = 0 then diagm (F 1. / sqr prms.first_step) else stu
     in
     Some hess_t
 
@@ -226,15 +206,7 @@ struct
     let m_half = AD.F Float.(of_int m / 2.) in
     let nu_half = F 0.5 * nu in
     let nu_plus_m_half = m_half + nu_half in
-    let i =
-      match X.n_beg with
-      | Some i -> i
-      | None -> 1
-    in
-    let cst0 =
-      F (Float.of_int i)
-      * (F Float.(of_int m * log Const.pi2) + (F 2. * sum' (log sigma0)))
-    in
+    let cst0 = F Float.(of_int m * log Const.pi2) + (F 2. * sum' (log sigma0)) in
     let cst =
       let cst1 = AD.loggamma nu_half - AD.loggamma nu_plus_m_half in
       let cst2 = m_half * log (F Const.pi * nu) in
@@ -245,10 +217,8 @@ struct
       (* u is K x T x M *)
       let u_s = AD.shape u in
       let n_samples = u_s.(0) in
-      let u0 =
-        get_slice [ []; Int.[ 0; i - 1 ]; [] ] u |> fun v -> reshape v [| -1; m |]
-      in
-      let u = get_slice [ []; [ i; -1 ]; [] ] u in
+      let u0 = get_slice [ []; [ 0 ]; [] ] u |> fun v -> reshape v [| -1; m |] in
+      let u = get_slice [ []; [ 1; -1 ]; [] ] u in
       assert (Array.length u_s = 3);
       let cst0 = F Float.(of_int n_samples) * cst0 in
       let cst = F Float.(of_int n_samples) * cst in

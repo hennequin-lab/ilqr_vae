@@ -12,18 +12,7 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
   let linesearch = U.requires_linesearch || D.requires_linesearch || L.requires_linesearch
 
   (* n : dimensionality of state space; m : input dimension *)
-  let solve
-        ?(conv_threshold = 1E-4)
-        ?(n_beg = 1)
-        ?saving_iter
-        ~u_init
-        ~primal'
-        ~n
-        ~m
-        ~n_steps
-        ~prms
-        data
-    =
+  let solve ?(conv_threshold = 1E-4) ~u_init ~primal' ~n ~m ~n_steps ~prms data =
     let module M = struct
       type theta = P.t'
 
@@ -36,15 +25,17 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
         in
         let cost_u = U.neg_logp_t ~prms:theta.prior in
         fun ~k ~x ~u ->
-          let cost_lik =
-            if k < n_beg then AD.F 0. else cost_liks.(k - n_beg) ~k:(k - n_beg) ~z_t:x
-          in
+          let cost_lik = if k < 1 then AD.F 0. else cost_liks.(k - 1) ~k:(k - 1) ~z_t:x in
           let cost_u = cost_u ~k ~x ~u in
           AD.Maths.(cost_u + cost_lik)
 
 
       let m = m
       let n = n
+      let zeros_n = AD.Mat.zeros 1 n
+      let zeros_m = AD.Mat.zeros 1 m
+      let zeros_nn = AD.Mat.zeros n n
+      let zeros_mn = AD.Mat.zeros m n
 
       let rl_u =
         Option.map U.neg_jac_t ~f:(fun neg_jac_t ~(theta : theta) ->
@@ -58,10 +49,10 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
             Array.init n_steps ~f:(fun k -> neg_jac_t ~data_t:(L.data_slice ~k data.o))
           in
           fun ~k ~x ~u:_ ->
-            if k < n_beg
-            then AD.Mat.zeros 1 n
+            if k < 1
+            then zeros_n
             else (
-              let k = k - n_beg in
+              let k = k - 1 in
               neg_jac_ts.(k) ~k ~z_t:x))
 
 
@@ -72,10 +63,10 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
             Array.init n_steps ~f:(fun k -> neg_hess_t ~data_t:(L.data_slice ~k data.o))
           in
           fun ~k ~x ~u:_ ->
-            if k < n_beg
-            then AD.Mat.zeros n n
+            if k < 1
+            then zeros_nn
             else (
-              let k = k - n_beg in
+              let k = k - 1 in
               neg_hess_ts.(k) ~k ~z_t:x))
 
 
@@ -84,19 +75,10 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
           neg_hess_t ~prms:theta.prior)
 
 
-      let rl_ux = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Mat.zeros m n)
+      let rl_ux = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> zeros_mn)
       let final_cost ~theta:_ ~k:_ ~x:_ = AD.F 0.
-
-      let fl_x =
-        let z = AD.Mat.zeros 1 n in
-        Some (fun ~theta:_ ~k:_ ~x:_ -> z)
-
-
-      let fl_xx =
-        let z = AD.Mat.zeros n n in
-        Some (fun ~theta:_ ~k:_ ~x:_ -> z)
-
-
+      let fl_x = Some (fun ~theta:_ ~k:_ ~x:_ -> zeros_n)
+      let fl_xx = Some (fun ~theta:_ ~k:_ ~x:_ -> zeros_nn)
       let dyn ~(theta : theta) = D.dyn ~theta:theta.dynamics
 
       let dyn_x =
@@ -111,7 +93,6 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
       let final_loss = final_cost
     end
     in
-    let n_steps = n_steps + n_beg - 1 in
     let module IP =
       DILQR.Make (struct
         include M
@@ -119,21 +100,9 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
         let n_steps = n_steps + 1
       end)
     in
-    let nprev = ref 1E8 in
-    let stop_ilqr loss ~prms =
-      let x0, theta = AD.Mat.zeros 1 n, prms in
-      let cprev = ref 1E9 in
-      fun _k us ->
-        let c = loss ~theta x0 us in
-        let pct_change = Float.(abs ((c -. !cprev) /. !cprev)) in
-        cprev := c;
-        (* Stdio.printf "\n loss %f || Iter %i \n%!" c _k; *)
-        (if Float.(pct_change < conv_threshold) then nprev := Float.(of_int _k));
-        Float.(pct_change < conv_threshold || Int.(_k > 10))
-    in
     let us =
       match u_init with
-      | None -> List.init n_steps ~f:(fun _ -> AD.Mat.zeros 1 m)
+      | None -> List.init n_steps ~f:(fun _ -> M.zeros_m)
       | Some us -> List.init n_steps ~f:(fun k -> AD.Maths.get_slice [ [ k ] ] (Arr us))
     in
     (*
@@ -141,21 +110,9 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
         x0 = 0    x1  x2 ......   xT xT+1
     *)
     let tau =
-      IP.ilqr
-        ~linesearch
-        ~stop:(stop_ilqr IP.loss ~prms)
-        ~us
-        ~x0:(AD.Mat.zeros 1 n)
-        ~theta:prms
-        ()
+      IP.ilqr ~max_iter:10 ~conv_threshold ~linesearch ~us ~x0:M.zeros_n ~theta:prms ()
     in
     let tau = AD.Maths.reshape tau [| n_steps + 1; -1 |] in
-    let _ =
-      match saving_iter with
-      | None -> ()
-      | Some file ->
-        AA.save_txt ~out:file ~append:true (AA.of_array [| !nprev |] [| 1; -1 |])
-    in
     AD.Maths.get_slice [ [ 0; -2 ]; [ n; -1 ] ] tau
 end
 
@@ -172,7 +129,6 @@ module Make
        val n : int (* state dimension *)
        val m : int (* input dimension *)
        val n_steps : int
-       val n_beg : int Option.t
        val diag_time_cov : bool
      end) =
 struct
@@ -181,8 +137,6 @@ struct
   module Integrate = Dynamics.Integrate (D)
   module Ilqr = ILQR (UR) (D) (L)
   open VAE_P
-
-  let n_beg = Option.value_map n_beg ~default:1 ~f:(fun i -> i)
 
   let init ?(sigma = 1.) ~prior ~prior_recog ~dynamics ~likelihood () : P.t =
     { prior
@@ -195,7 +149,7 @@ struct
           ~no_triangle:diag_time_cov
           ~pin_diag:false
           ~sigma2:Float.(square sigma)
-          (n_steps + n_beg - 1)
+          n_steps
     }
 
 
@@ -224,41 +178,31 @@ struct
 
   let primal' = Ilqr.P.map ~f:AD.primal'
 
-  let posterior_mean ?saving_iter ?conv_threshold ?u_init ~(prms : P.t') data =
+  let posterior_mean ?conv_threshold ?u_init ~(prms : P.t') data =
     let ilqr_prms : Ilqr.P.t' =
       { prior = prms.prior_recog; dynamics = prms.dynamics; likelihood = prms.likelihood }
     in
-    Ilqr.solve
-      ?saving_iter
-      ?conv_threshold
-      ~n_beg
-      ~u_init
-      ~primal'
-      ~n
-      ~m
-      ~n_steps
-      ~prms:ilqr_prms
-      data
+    Ilqr.solve ?conv_threshold ~u_init ~primal' ~n ~m ~n_steps ~prms:ilqr_prms data
 
 
   let sample_recognition ~(prms : P.t') =
     let chol_space = Covariance.to_chol_factor prms.space_cov in
     let chol_time_t = Covariance.to_chol_factor prms.time_cov in
     fun ~mu_u n_samples ->
-      let mu_u = AD.Maths.reshape mu_u [| 1; n_steps + n_beg - 1; m |] in
-      let xi = AD.Mat.(gaussian Int.(n_samples * (n_steps + n_beg - 1)) m) in
+      let mu_u = AD.Maths.reshape mu_u [| 1; n_steps; m |] in
+      let xi = AD.Mat.(gaussian Int.(n_samples * n_steps) m) in
       let z =
         AD.Maths.(xi *@ chol_space)
         |> fun v ->
-        AD.Maths.reshape v [| n_samples; n_steps + n_beg - 1; m |]
+        AD.Maths.reshape v [| n_samples; n_steps; m |]
         |> fun v ->
         AD.Maths.transpose ~axis:[| 1; 0; 2 |] v
         |> fun v ->
-        AD.Maths.reshape v [| n_steps + n_beg - 1; -1 |]
+        AD.Maths.reshape v [| n_steps; -1 |]
         |> fun v ->
         AD.Maths.(transpose chol_time_t *@ v)
         |> fun v ->
-        AD.Maths.reshape v [| n_steps + n_beg - 1; n_samples; m |]
+        AD.Maths.reshape v [| n_steps; n_samples; m |]
         |> fun v -> AD.Maths.transpose ~axis:[| 1; 0; 2 |] v
       in
       AD.Maths.(mu_u + z)
@@ -267,8 +211,6 @@ struct
   let predictions ?(pre = true) ~n_samples ~prms mu_u =
     let u = sample_recognition ~prms ~mu_u n_samples in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u in
-    let z = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] z in
-    let u = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] u in
     let o =
       Array.init n_samples ~f:(fun i ->
         let z = AD.Maths.(reshape (get_slice [ [ i ] ] z) [| n_steps; n |]) in
@@ -297,7 +239,6 @@ struct
     fun samples data ->
       let n_samples = (AD.shape samples).(0) in
       let z = dyn ~n ~u:samples in
-      let z = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] z in
       let data = { data with z = Some z } in
       AD.Maths.(logp data / F Float.(of_int n_samples))
 
@@ -337,7 +278,7 @@ struct
             (* K x T x N *)
             du
             |> AD.Maths.transpose ~axis:[| 1; 0; 2 |]
-            |> (fun v -> AD.Maths.reshape v [| n_steps + n_beg - 1; -1 |])
+            |> (fun v -> AD.Maths.reshape v [| n_steps; -1 |])
             |> AD.Linalg.linsolve ~typ:`u ~trans:true c_time
             |> (fun v -> AD.Maths.reshape v [| -1; m_ |])
             |> AD.Maths.transpose

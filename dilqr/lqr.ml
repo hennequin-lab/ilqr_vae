@@ -48,8 +48,7 @@ module Make (A : Prms.Intf.A) = struct
             try true, Some (AD.Linalg.chol ~upper:true qtuu) with
             | _ -> false, None
           in
-          (* let _, svs, _ = AD.Linalg.svd qtuu in *)
-          if not is_pos_def (* && A.min' (AD.unpack_arr svs) > 1E-8) *)
+          if not is_pos_def
           then (
             if mu > 0. then Printf.printf "Regularizing... mu = %f \n%!" mu;
             backward

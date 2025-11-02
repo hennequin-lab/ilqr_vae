@@ -14,25 +14,18 @@ type setup =
 
 module Make_model (P : sig
     val setup : setup
-    val n_beg : int Option.t
   end) =
 struct
-  module U = Prior.Student (struct
-      let n_beg = P.n_beg
-    end)
-
-  module UR = Prior.Gaussian (struct
-      let n_beg = P.n_beg
-    end)
+  module U = Prior.Student
+  module UR = Prior.Gaussian
 
   module L = Likelihood.Gaussian (struct
       let label = "o"
       let normalize_c = false
     end)
 
-  module D = Dynamics.InvertedBottleneck (struct
+  module D = Dynamics.Linear_nonlinear (struct
       let phi = AD.Maths.tanh, fun x -> AD.Maths.(F 1. - sqr (tanh x))
-      let n_beg = P.n_beg
     end)
 
   module Model =
@@ -42,7 +35,6 @@ struct
         let m = P.setup.m
         let n_steps = P.setup.n_steps
         let diag_time_cov = false
-        let n_beg = P.n_beg
       end)
 end
 

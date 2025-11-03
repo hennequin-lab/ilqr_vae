@@ -14,13 +14,12 @@ let noise_std = 0.1
 
 module M = Make_model (struct
     let setup = setup
-    let n_beg = Some (setup.n / setup.m)
   end)
 
 open M
 
 let reg ~(prms : Model.P.t') =
-  let z = Float.(1e-5 / of_int Int.(setup.n * setup.n)) in
+  let z = Float.(1e-5 / of_int Int.(setup.n * setup.nh)) in
   let part1 = AD.Maths.(F z * l2norm_sqr' prms.dynamics.a1) in
   let part2 = AD.Maths.(F z * l2norm_sqr' prms.dynamics.a2) in
   AD.Maths.(part1 + part2)

@@ -3,6 +3,8 @@ open Ilqr_vae
 open Misc
 open Lorenz_common
 open Vae
+module Mat = Owl.Dense.Matrix.S
+module Arr = Owl.Dense.Ndarray.S
 
 let dir = Cmdargs.(get_string "-d" |> force ~usage:"-d [dir]")
 let in_dir = Printf.sprintf "%s/%s" dir
@@ -22,10 +24,13 @@ let (prms_final : Model.P.t') =
   C.broadcast' (fun () -> Misc.read_bin (in_dir "../final.params.bin") |> Model.P.value)
 
 
+let (prms_init : Model.P.t') =
+  C.broadcast' (fun () -> Misc.read_bin (in_dir "../init.params.bin") |> Model.P.value)
+
+
 let _ = print [%message (Model.P.numel' prms_final : int)]
 
-(*
-   (* -----------------------------------------
+(* -----------------------------------------
    -- Extrapolation test:
    -- get posterior mean, zero out the last half
    -- and run the dynamics
@@ -57,7 +62,7 @@ let do_for prefix prms =
 let _ =
   do_for "init" prms_init;
   do_for "final" prms_final
-*)
+
 
 (* -----------------------------------------
    -- Long autonomous trajectory test
@@ -72,9 +77,8 @@ let _ =
   let o = L.pre_sample ~prms:prms_final.likelihood ~z:(AD.squeeze0 z) in
   AA.save_txt ~out:(in_dir Printf.(sprintf "long_autonomous_%i" C.rank)) (AD.unpack_arr o)
 
-(*
-   (*
-   (* -----------------------------------------
+
+(* -----------------------------------------
    -- R2_k à la Hernandez et al
    ----------------------------------------- *)
 
@@ -87,7 +91,7 @@ let do_for prefix prms =
       let true_o = Option.value_exn data.z |> AD.unpack_arr in
       let mean_o = Mat.mean ~axis:0 true_o in
       (* get the posterior *)
-      let u = Model.posterior_mean ~u_init:None ~prms data |> AD.unpack_arr in
+      let u = Model.posterior_mean ~prms data |> AD.unpack_arr in
       (* for each t from 1 to T-2, integrate after zeroing out all inputs after t *)
       let pred_os =
         Array.init (setup.n_steps - 2) ~f:(fun t ->
@@ -99,12 +103,9 @@ let do_for prefix prms =
               Arr.(zeros (shape (Mat.get_slice [ [ Int.(t + 1); -1 ] ] uz)));
             AD.pack_arr uz
           in
-          let z =
-            D.integrate ~prms:prms.generative.dynamics ~n:setup.n ~u:(AD.expand0 uz)
-          in
+          let z = D.integrate ~prms:prms.dynamics ~n:setup.n ~u:(AD.expand0 uz) in
           let o =
-            L.pre_sample ~prms:prms.generative.likelihood ~z:(AD.squeeze0 z)
-            |> AD.unpack_arr
+            L.pre_sample ~prms:prms.likelihood ~z:(AD.squeeze0 z) |> AD.unpack_arr
           in
           Mat.save_txt ~out:(in_dir Printf.(sprintf "predicted_o_%i_after_%i" i t)) o;
           o)
@@ -122,7 +123,8 @@ let do_for prefix prms =
                 num, denom)
           in
           Float.(
-            1. - (Stats.sum (Array.map ~f:fst tmp) / Stats.sum (Array.map ~f:snd tmp))))
+            1.
+            - (Owl.Stats.sum (Array.map ~f:fst tmp) / Owl.Stats.sum (Array.map ~f:snd tmp))))
       in
       Some r2k)
     else None)
@@ -139,5 +141,3 @@ let do_for prefix prms =
 let _ =
   do_for "init" prms_init;
   do_for "final" prms_final
-*)
-*)

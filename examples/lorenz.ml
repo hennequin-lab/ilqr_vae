@@ -117,7 +117,7 @@ let rec iter ~k state =
   let prms = C.broadcast (Optimizer.v state) in
   if Int.(k % 200 = 0) then save_results (in_dir "final") prms data;
   let loss, g =
-    Model.elbo_gradient ~n_samples:100 ~mini_batch:8 ~conv_threshold:1E-4 ~reg prms data
+    Model.elbo_gradient ~n_samples:100 ~mini_batch:8 ~conv_threshold:1E-2 ~reg prms data
   in
   (if C.first
    then AA.(save_txt ~append:true ~out:(in_dir "loss") (of_array [| loss |] [| 1; 1 |])));

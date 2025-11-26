@@ -229,3 +229,89 @@ module Student = struct
       in
       neg (first_term + rest)
 end
+
+module Laplacian = struct
+  module P = Prior_intf.Laplacian_P
+  open P
+  open AD.Maths
+
+  let requires_linesearch = true
+
+  let init ?(pin_std = false) ?(spatial_std = 1.) ~m () =
+    let spatial_stds = Prms.create ~above:(F 1E-3) (AD.Mat.create 1 m spatial_std) in
+    { spatial_stds = (if pin_std then Prms.pin spatial_stds else spatial_stds)
+    ; first_bin = spatial_stds
+    }
+
+
+  let kl_to_gaussian = `sampling_based
+
+  let sample ~(prms : AD.t prm) ~n_steps ~m =
+    let z =
+      let flips = AD.Mat.(signum (gaussian Int.(n_steps - 1) m)) in
+      flips
+      * AD.pack_arr AA.(neg (log (uniform ~a:0. ~b:1. [| Int.(n_steps - 1); m |])))
+      * prms.spatial_stds
+    in
+    let z0 = AD.Mat.gaussian 1 m * prms.first_bin in
+    print [%message (AD.shape z : int array) (AD.shape z0 : int array)];
+    concatenate ~axis:0 [| z0; z |]
+
+
+  (* 1/(2sigma) * exp (-abs(u) / sigma)) *)
+
+  let neg_logp_t ~prms =
+    (* Gaussian for the first step, Laplace after that *)
+    let m = AD.Mat.numel prms.spatial_stds in
+    let cst0 = Float.(of_int m * log Const.pi2) in
+    let cst1 = Float.(of_int m * log 2.) in
+    fun ~k ~x:_ ~u ->
+      if k = 0
+      then
+        F 0.5
+        * (F cst0 + (F 2. * sum' (log prms.first_bin)) + l2norm_sqr' (u / prms.first_bin))
+      else F cst1 + sum' (log prms.spatial_stds) + sum' (abs u / prms.spatial_stds)
+
+
+  (* 0.5 * sum' (abs (u/prms.spatial_stds))
+    u * sign(u)
+  *)
+
+  let neg_jac_t =
+    let jac_t ~prms =
+      fun ~k ~x:_ ~u ->
+      if k = 0 then u / sqr prms.first_bin else signum u / prms.spatial_stds
+    in
+    Some jac_t
+
+
+  let neg_hess_t =
+    let hess_t ~prms =
+      let m = AD.Mat.numel prms.spatial_stds in
+      let zeros_m = AD.Mat.zeros m m in
+      fun ~k ~x:_ ~u:_ -> if k = 0 then diagm (F 1. / sqr prms.first_bin) else zeros_m
+    in
+    Some hess_t
+
+
+  let logp ~prms ~n_steps =
+    (* Gaussian for the first step, Laplace after that *)
+    let m = AD.Mat.numel prms.spatial_stds in
+    let cst0 = Float.(of_int m * log Const.pi2) in
+    let cst1 = F Float.(of_int m * log 2.) + sum' (log prms.spatial_stds) in
+    fun u ->
+      let u_s = AD.shape u in
+      assert (Array.length u_s = 3);
+      let n_samples = u_s.(0) in
+      let u0 = get_slice [ []; [ 0 ]; [] ] u |> fun v -> reshape v [| -1; m |] in
+      let u = get_slice [ []; [ 1; -1 ]; [] ] u in
+      let first_term =
+        F 0.5
+        * (F cst0 + (F 2. * sum' (log prms.first_bin)) + l2norm_sqr' (u0 / prms.first_bin))
+      in
+      let rest =
+        let u = reshape u [| -1; m |] / prms.spatial_stds in
+        (F Float.(of_int Int.(n_steps * n_samples)) * cst1) + sum' (abs u)
+      in
+      neg (first_term + rest)
+end

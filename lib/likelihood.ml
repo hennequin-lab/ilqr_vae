@@ -175,7 +175,9 @@ struct
     (z *@ transpose c) + prms.bias
 
 
-  let pre_sample ~prms ~z = link_function (pre_sample_before_link_function ~prms ~z)
+  let pre_sample ~prms ~z =
+    prms.gain * link_function (pre_sample_before_link_function ~prms ~z)
+
 
   let sample ~prms ~z =
     let t = AD.Mat.row_num z in

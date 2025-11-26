@@ -11,3 +11,9 @@ module Student : sig
 
   val init : ?pin_std:bool -> ?spatial_std:float -> ?nu:float -> m:int -> unit -> P.t
 end
+
+module Laplacian : sig
+  include T with module P = Prior_intf.Laplacian_P
+
+  val init : ?pin_std:bool -> ?spatial_std:float -> m:int -> unit -> P.t
+end

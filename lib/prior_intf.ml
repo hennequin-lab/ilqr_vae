@@ -30,6 +30,16 @@ module Gaussian_P = struct
   include Make (Prms.Single)
 end
 
+module Laplacian_P = struct
+  type 'a prm =
+    { spatial_stds : 'a
+    ; first_bin : 'a
+    }
+  [@@deriving prms, accessors ~submodule:A]
+
+  include Make (Prms.Single)
+end
+
 module Student_P = struct
   type 'a prm =
     { spatial_stds : 'a

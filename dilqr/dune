@@ -1,4 +1,5 @@
 (library
  (name dilqr)
  (public_name dilqr)
- (libraries owl bmo stdio prms))
+ (libraries owl bmo stdio prms)
+ (preprocess (pps ppx_sexp_message)))

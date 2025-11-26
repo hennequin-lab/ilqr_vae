@@ -2,7 +2,7 @@ open Base
 open Owl
 open Ilqr_vae
 open Misc
-module Solver = Owl_ode.Native.S.RK4
+module Solver = Owl_ode.Native.D.RK4
 
 type setup =
   { n : int
@@ -16,7 +16,7 @@ module Make_model (P : sig
     val setup : setup
   end) =
 struct
-  module U = Prior.Student
+  module U = Prior.Laplacian
   module UR = Prior.Gaussian
 
   module L = Likelihood.Gaussian (struct

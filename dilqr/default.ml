@@ -1,5 +1,7 @@
 open Base
 
+(* let print s = Stdio.print_endline (Sexp.to_string_hum s) *)
+
 module Make (A : Prms.Intf.A) = struct
   module Lqr = Lqr.Make (A)
   module Bmo = Bmo.Make (A)

@@ -186,11 +186,11 @@ struct
   let requires_linesearch = true
 
   let init ?(radius = 0.1) ?(decay = 0.5) ~n ~nh ~m () =
-    let sigma = Float.(1. / sqrt (of_int n)) in
-    let sigma_h = Float.(radius / sqrt (of_int nh)) in
+    let sigma1 = Float.(1. / of_int n) in
+    let sigma2 = Float.(radius / sqrt (of_int nh)) in
     { a0 = Prms.create (F decay * AD.Mat.eye n)
-    ; a1 = Prms.create (AD.Mat.gaussian ~sigma n nh)
-    ; a2 = Prms.create (AD.Mat.gaussian ~sigma:sigma_h nh n)
+    ; a1 = Prms.create (AD.Mat.gaussian ~sigma:sigma1 n nh)
+    ; a2 = Prms.create (AD.Mat.gaussian ~sigma:sigma2 nh n)
     ; bias1 = Prms.create (AD.Mat.gaussian 1 nh)
     ; bias2 = Prms.create (AD.Mat.zeros 1 n)
     ; b = Some (Prms.create (AD.Mat.gaussian ~sigma:Float.(1. / sqrt (of_int m)) m n))

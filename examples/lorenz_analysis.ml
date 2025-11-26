@@ -10,7 +10,6 @@ let setup = { n = 3; nh = 128; m = 3; n_trials = 512; n_steps = 32 }
 
 module M = Make_model (struct
     let setup = setup
-    let n_beg = Some (setup.n / setup.m)
   end)
 
 open M

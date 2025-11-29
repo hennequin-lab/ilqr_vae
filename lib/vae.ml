@@ -34,7 +34,6 @@ module ILQR (U : Prior.T) (D : Dynamics.T) (L : Likelihood.T) = struct
       let n = n
       let zeros_n = AD.Mat.zeros 1 n
       let weak_m = AD.Maths.(F 1e-3 * AD.Mat.gaussian 1 m)
-      let zeros_m = AD.Mat.zeros 1 m
       let zeros_nn = AD.Mat.zeros n n
       let zeros_mn = AD.Mat.zeros m n
 

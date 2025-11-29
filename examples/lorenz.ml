@@ -113,7 +113,7 @@ module Optimizer = Opt.Shampoo.Make (Model.P)
 let config _k = Opt.Shampoo.{ beta = 0.95; learning_rate = Some 0.1 }
 
 let rec iter ~k state =
-  if k % 200 = 0 then Optimizer.save ~out:(in_dir "state.bin") state;
+  if k % 200 = 0 && C.first then Optimizer.save ~out:(in_dir "state.bin") state;
   let prms = C.broadcast (Optimizer.v state) in
   if Int.(k % 200 = 0) then save_results (in_dir "final") prms data;
   let loss, g =

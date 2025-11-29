@@ -182,6 +182,12 @@ struct
   module Ilqr = ILQR (UR) (D) (L)
   open VAE_P
 
+  let broadcast_prms prms =
+    let prms_ba = prms |> P.value |> P.flatten' |> AD.unpack_arr in
+    Mpi.broadcast_bigarray prms_ba 0 Mpi.comm_world;
+    P.unflatten prms (AD.Arr prms_ba)
+
+
   let n_beg = Option.value_map n_beg ~default:1 ~f:(fun i -> i)
 
   let init ?(sigma = 1.) ~prior ~prior_recog ~dynamics ~likelihood () : P.t =
@@ -385,11 +391,12 @@ struct
         (prms : P.t)
         (data : L.data data array)
     =
-    let prms = C.broadcast prms in
     let data_batch =
       match mini_batch with
       | None -> data
       | Some size ->
+        if Int.(size % C.n_nodes <> 0)
+        then failwith "mini_batch size should be a multiple of C.n_nodes";
         let ids =
           C.broadcast' (fun () ->
             let ids = List.(permute (range 0 (Array.length data)) |> to_array) in
@@ -402,9 +409,9 @@ struct
         data_batch
         ~init:(0, 0., None)
         ~f:(fun i (accu_count, accu_loss, accu_g) datai ->
-          Stdlib.Gc.major ();
           if Int.(i % C.n_nodes = C.rank)
           then (
+            Stdlib.Gc.major ();
             try
               let open AD in
               let prms = P.make_reverse prms (AD.tag ()) in

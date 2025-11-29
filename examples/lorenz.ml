@@ -7,7 +7,7 @@ open Vae
 let dir = Cmdargs.(get_string "-d" |> force ~usage:"-d [dir]")
 let in_dir = Printf.sprintf "%s/%s" dir
 let reuse_data = Cmdargs.check "-reuse_data"
-let max_iter = Cmdargs.(get_int "-max_iter" |> default 40_000)
+let max_iter = Cmdargs.(get_int "-max_iter" |> default 20)
 let setup = { n = 3; nh = 128; m = 3; n_trials = 512; n_steps = 32 }
 let n_output = 3
 let noise_std = 0.1
@@ -86,7 +86,6 @@ let init_prms () =
 
 
 let save_results prefix prms data =
-  let prms = C.broadcast prms in
   let file s = prefix ^ "." ^ s in
   C.root_perform (fun () ->
     Misc.save_bin ~out:(file "params.bin") prms;
@@ -115,10 +114,10 @@ let config _k = Opt.Shampoo.{ beta = 0.95; learning_rate = Some 0.1 }
 
 let rec iter ~k state =
   if k % 200 = 0 && C.first then Optimizer.save ~out:(in_dir "state.bin") state;
-  let prms = C.broadcast (Optimizer.v state) in
+  let prms = Model.broadcast_prms (Optimizer.v state) in
   (* if Int.(k % 200 = 0) then save_results (in_dir "final") prms data; *)
   let loss, g =
-    Model.elbo_gradient ~n_samples:100 ~mini_batch:8 ~conv_threshold:1E-4 ~reg prms data
+    Model.elbo_gradient ~n_samples:100 ~mini_batch:4 ~conv_threshold:1E-4 ~reg prms data
   in
   (if C.first
    then AA.(save_txt ~append:true ~out:(in_dir "loss") (of_array [| loss |] [| 1; 1 |])));
@@ -132,12 +131,13 @@ let rec iter ~k state =
 
 
 let final_prms =
-  let state =
-    match Cmdargs.get_string "-reuse" with
-    | Some file -> Optimizer.load file
-    | None -> Optimizer.init ~epsilon:1e-4 (init_prms ())
-  in
-  iter ~k:0 state
+  time_this ~label:"training" (fun () ->
+    let state =
+      match Cmdargs.get_string "-reuse" with
+      | Some file -> Optimizer.load file
+      | None -> Optimizer.init ~epsilon:1e-4 (init_prms ())
+    in
+    iter ~k:0 state)
 
 
 let _ = save_results (in_dir "final") final_prms data

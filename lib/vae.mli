@@ -34,6 +34,8 @@ module Make
   module Integrate : module type of Dynamics.Integrate (D)
   module Ilqr : module type of ILQR (UR) (D) (L)
 
+  val broadcast_prms : P.t -> P.t
+
   val init
     :  ?sigma:float
     -> prior:U.P.t

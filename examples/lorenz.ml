@@ -7,7 +7,7 @@ open Vae
 let dir = Cmdargs.(get_string "-d" |> force ~usage:"-d [dir]")
 let in_dir = Printf.sprintf "%s/%s" dir
 let reuse_data = Cmdargs.check "-reuse_data"
-let max_iter = Cmdargs.(get_int "-max_iter" |> default 20)
+let max_iter = Cmdargs.(get_int "-max_iter" |> default 60)
 let setup = { n = 3; nh = 128; m = 3; n_trials = 512; n_steps = 32 }
 let n_output = 3
 let noise_std = 0.1

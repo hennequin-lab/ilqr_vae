@@ -79,7 +79,7 @@ let init_prms () =
     (* let prior = U.init ~spatial_std:1.0 ~nu:20. ~m () in *)
     let prior = U.init ~spatial_std:1.0 ~m () in
     let prior_recog = UR.init ~spatial_std:1.0 ~m () in
-    let dynamics = D.init ~radius:0.01 ~decay:0.1 ~n ~nh ~m () in
+    let dynamics = D.init ~radius:0.4 ~n ~nh ~m () in
     let likelihood = L.init ~scale:1. ~sigma2:1. ~n ~n_output () in
     Model.init ~prior ~prior_recog ~dynamics ~likelihood ())
 

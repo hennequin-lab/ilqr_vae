@@ -138,6 +138,11 @@ struct
   module Ilqr = ILQR (UR) (D) (L)
   open VAE_P
 
+  let broadcast_prms prms =
+    let prms_ba = prms |> P.value |> P.flatten' |> AD.unpack_arr in
+    Mpi.broadcast_bigarray prms_ba 0 Mpi.comm_world;
+    P.unflatten prms (AD.Arr prms_ba)
+
   let init ?(sigma = 1.) ~prior ~prior_recog ~dynamics ~likelihood () : P.t =
     { prior
     ; prior_recog
@@ -379,20 +384,16 @@ struct
     in
     let total_count = Mpi.reduce_int count Mpi.Int_sum 0 Mpi.comm_world in
     let loss = Mpi.reduce_float loss Mpi.Float_sum 0 Mpi.comm_world in
+    let g = Option.value_exn g in
     let average_gradient =
-      let gs = C.gather (Option.value_exn g) in
-      let g =
-        if C.first
-        then
-          Array.fold gs ~init:None ~f:(fun accu g ->
-            match accu with
-            | None -> Some g
-            | Some g' -> Some P.(g + g'))
-        else None
-      in
-      Option.map g ~f:(fun g -> P.(F Float.(1. / of_int total_count) $* g))
+      let gg = g |> P.flatten' |> AD.unpack_arr in
+      let gradient = AA.copy gg in
+      Mpi.reduce_bigarray gg gradient Mpi.Sum 0 Mpi.comm_world;
+      AA.div_scalar_ gradient Float.(of_int total_count);
+      if C.first then Some (P.unflatten' (P.value prms) (AD.Arr gradient)) else None
     in
     Float.(loss / of_int total_count), average_gradient
+
 
 
   (*

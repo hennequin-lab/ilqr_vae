@@ -27,7 +27,9 @@ module Make
        val n_steps : int
        val diag_time_cov : bool
      end) : sig
-  module P : module type of VAE_P.Make (U.P) (UR.P) (D.P) (L.P) (Covariance.P)
+  module P :
+      module type of VAE_P.Make (Prms.Option (U.P)) (UR.P) (D.P) (L.P) (Covariance.P)
+
   module Integrate : module type of Dynamics.Integrate (D)
   module Ilqr : module type of ILQR (UR) (D) (L)
 
@@ -35,7 +37,7 @@ module Make
 
   val init
     :  ?sigma:float
-    -> prior:U.P.t
+    -> ?prior:U.P.t
     -> prior_recog:UR.P.t
     -> dynamics:D.P.t
     -> likelihood:L.P.t

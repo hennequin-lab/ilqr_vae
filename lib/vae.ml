@@ -133,7 +133,7 @@ module Make
      end) =
 struct
   open X
-  module P = VAE_P.Make (U.P) (UR.P) (D.P) (L.P) (Covariance.P)
+  module P = VAE_P.Make (Prms.Option (U.P)) (UR.P) (D.P) (L.P) (Covariance.P)
   module Integrate = Dynamics.Integrate (D)
   module Ilqr = ILQR (UR) (D) (L)
   open VAE_P
@@ -143,7 +143,8 @@ struct
     Mpi.broadcast_bigarray prms_ba 0 Mpi.comm_world;
     P.unflatten prms (AD.Arr prms_ba)
 
-  let init ?(sigma = 1.) ~prior ~prior_recog ~dynamics ~likelihood () : P.t =
+
+  let init ?(sigma = 1.) ?prior ~prior_recog ~dynamics ~likelihood () : P.t =
     { prior
     ; prior_recog
     ; dynamics
@@ -159,7 +160,11 @@ struct
 
 
   let sample_generative ~prms =
-    let u = U.sample ~prms:prms.prior ~n_steps ~m in
+    let u =
+      match prms.prior with
+      | Some prms -> U.sample ~prms ~n_steps ~m
+      | None -> UR.sample ~prms:prms.prior_recog ~n_steps ~m
+    in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:(AD.expand0 u) |> AD.squeeze0 in
     let o = L.sample ~prms:prms.likelihood ~z in
     { u = Some u; z = Some z; o }
@@ -248,67 +253,96 @@ struct
       AD.Maths.(logp data / F Float.(of_int n_samples))
 
 
-  let kl_term ~(prms : P.t') =
-    match U.kl_to_gaussian with
-    | `sampling_based ->
-      let logp = U.logp ~prms:prms.prior ~n_steps in
-      let logq =
-        (* sticking the landing... *)
-        let space_cov = Covariance.P.map ~f:AD.primal' prms.space_cov in
-        let time_cov = Covariance.P.map ~f:AD.primal' prms.time_cov in
-        let c_space = Covariance.to_chol_factor space_cov in
-        let c_time = Covariance.to_chol_factor time_cov in
-        let m_ = AD.Mat.row_num c_space in
-        let m = Float.of_int m_ in
-        let t = Float.of_int (AD.Mat.row_num c_time) in
-        let cst = Float.(m * t * log Owl.Const.pi2) in
-        let log_det_term =
-          let d_space = space_cov.d in
-          let d_time = time_cov.d in
-          AD.Maths.(F 2. * ((F m * sum' (log d_time)) + (F t * sum' (log d_space))))
-        in
-        fun mu_u u ->
-          let u_s = AD.shape u in
-          assert (Array.length u_s = 3);
-          let n_samples = u_s.(0) in
-          let du = AD.Maths.(u - AD.expand0 mu_u) in
-          (* quadratic term:
+  module KL_term (Actual_prior : sig
+      module AU : Prior.T
+
+      val extract_prior_prms : P.t' -> AU.P.t'
+    end) =
+  struct
+    open Actual_prior
+
+    let kl_term ~(prms : P.t') =
+      let au_prms = extract_prior_prms prms in
+      match AU.kl_to_gaussian with
+      | `sampling_based ->
+        let logp = AU.logp ~prms:au_prms ~n_steps in
+        let logq =
+          (* sticking the landing... *)
+          let space_cov = Covariance.P.map ~f:AD.primal' prms.space_cov in
+          let time_cov = Covariance.P.map ~f:AD.primal' prms.time_cov in
+          let c_space = Covariance.to_chol_factor space_cov in
+          let c_time = Covariance.to_chol_factor time_cov in
+          let m_ = AD.Mat.row_num c_space in
+          let m = Float.of_int m_ in
+          let t = Float.of_int (AD.Mat.row_num c_time) in
+          let cst = Float.(m * t * log Owl.Const.pi2) in
+          let log_det_term =
+            let d_space = space_cov.d in
+            let d_time = time_cov.d in
+            AD.Maths.(F 2. * ((F m * sum' (log d_time)) + (F t * sum' (log d_space))))
+          in
+          fun mu_u u ->
+            let u_s = AD.shape u in
+            assert (Array.length u_s = 3);
+            let n_samples = u_s.(0) in
+            let du = AD.Maths.(u - AD.expand0 mu_u) in
+            (* quadratic term:
              assuming vec is stacking columns, du = vec(dU) and dU = is T x N
                du^t ((S^t S)⊗(T^t T))^{-1} du
             =  du^t ((S^{-1} S^{-t})⊗(T^{-1} T^{-t})) du
             =  du^t (S^{-1}⊗T^{-1}) (S^{-t}⊗T^{-t}) du
             =  || (S^{-t}⊗T^{-t}) du ||^2
             =  || vec(T^{-t} dU S^{-1}) ||^2 *)
-          let quadratic_term =
-            (* K x T x N *)
-            du
-            |> AD.Maths.transpose ~axis:[| 1; 0; 2 |]
-            |> (fun v -> AD.Maths.reshape v [| n_steps; -1 |])
-            |> AD.Linalg.linsolve ~typ:`u ~trans:true c_time
-            |> (fun v -> AD.Maths.reshape v [| -1; m_ |])
-            |> AD.Maths.transpose
-            |> AD.Linalg.linsolve ~typ:`u ~trans:true c_space
-            |> AD.Maths.l2norm_sqr'
-          in
-          AD.Maths.(
-            F (-0.5)
-            * ((F Float.(of_int n_samples) * (F cst + log_det_term)) + quadratic_term))
-      in
-      fun mu_u u ->
-        let u_s = AD.shape u in
-        assert (Array.length u_s = 3);
-        let n_samples = u_s.(0) in
-        (* compute log q(u) - log p(u) *)
-        let logqu = logq (AD.primal' mu_u) u in
-        let logpu = logp u in
-        AD.Maths.((logqu - logpu) / F Float.(of_int n_samples))
-    | `direct f ->
-      fun mu_u _ -> f ~prms:prms.prior ~mu:mu_u ~space:prms.space_cov ~time:prms.time_cov
-
+            let quadratic_term =
+              (* K x T x N *)
+              du
+              |> AD.Maths.transpose ~axis:[| 1; 0; 2 |]
+              |> (fun v -> AD.Maths.reshape v [| n_steps; -1 |])
+              |> AD.Linalg.linsolve ~typ:`u ~trans:true c_time
+              |> (fun v -> AD.Maths.reshape v [| -1; m_ |])
+              |> AD.Maths.transpose
+              |> AD.Linalg.linsolve ~typ:`u ~trans:true c_space
+              |> AD.Maths.l2norm_sqr'
+            in
+            AD.Maths.(
+              F (-0.5)
+              * ((F Float.(of_int n_samples) * (F cst + log_det_term)) + quadratic_term))
+        in
+        fun mu_u u ->
+          let u_s = AD.shape u in
+          assert (Array.length u_s = 3);
+          let n_samples = u_s.(0) in
+          (* compute log q(u) - log p(u) *)
+          let logqu = logq (AD.primal' mu_u) u in
+          let logpu = logp u in
+          AD.Maths.((logqu - logpu) / F Float.(of_int n_samples))
+      | `direct f ->
+        fun mu_u _ -> f ~prms:au_prms ~mu:mu_u ~space:prms.space_cov ~time:prms.time_cov
+  end
 
   let elbo ?conv_threshold ~mu_u ~n_samples ?(beta = 1.) ~(prms : P.t') =
     let lik_term = lik_term ~prms in
-    let kl_term = kl_term ~prms in
+    let kl_term =
+      match prms.prior with
+      | Some _ ->
+        let module KL =
+          KL_term (struct
+            module AU = U
+
+            let extract_prior_prms prms = Option.value_exn prms.prior
+          end)
+        in
+        KL.kl_term ~prms
+      | None ->
+        let module KL =
+          KL_term (struct
+            module AU = UR
+
+            let extract_prior_prms prms = prms.prior_recog
+          end)
+        in
+        KL.kl_term ~prms
+    in
     let sample_recognition = sample_recognition ~prms in
     fun data ->
       let mu_u =
@@ -393,7 +427,6 @@ struct
       if C.first then Some (P.unflatten' (P.value prms) (AD.Arr gradient)) else None
     in
     Float.(loss / of_int total_count), average_gradient
-
 
 
   (*

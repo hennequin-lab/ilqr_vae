@@ -32,9 +32,8 @@ end
 module Linear_nonlinear (X : sig
     val phi : (AD.t -> AD.t) * (AD.t -> AD.t)
     val dt : float
-    val tau : float
   end) : sig
   include T with module P = Dynamics_intf.Linear_nonlinear_P
 
-  val init : ?radius:float -> n:int -> nh:int -> m:int -> unit -> P.t
+  val init : ?radius:float -> tau:float -> n:int -> nh:int -> m:int -> unit -> P.t
 end

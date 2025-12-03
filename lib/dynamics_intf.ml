@@ -35,7 +35,8 @@ end
 
 module Linear_nonlinear_P = struct
   type ('a, 'opt) prm =
-    { a0 : 'a
+    { dt_over_tau : 'a
+    ; a0 : 'a
     ; a1 : 'a
     ; a2 : 'a
     ; bias1 : 'a

@@ -176,7 +176,6 @@ end
 module Linear_nonlinear (X : sig
     val phi : (AD.t -> AD.t) * (AD.t -> AD.t)
     val dt : float
-    val tau : float
   end) =
 struct
   module P = Dynamics_intf.Linear_nonlinear_P
@@ -187,13 +186,14 @@ struct
   let phi, d_phi = phi
   let requires_linesearch = true
 
-  let init ?(radius = 0.1) ~n ~nh ~m () =
+  let init ?(radius = 0.1) ~tau ~n ~nh ~m () =
     let sigma1 = Float.(1. / of_int n) in
     let sigma2 = Float.(radius / sqrt (of_int nh)) in
-    { a0 = Prms.create (F Float.(1. - (dt / tau)) * AD.Mat.eye n)
+    { dt_over_tau = Prms.create (F Float.(dt / tau) * AD.Mat.ones 1 n)
+    ; a0 = Prms.create (F 0.5 * AD.Mat.eye n)
     ; a1 = Prms.create (AD.Mat.gaussian ~sigma:sigma1 n nh)
     ; a2 = Prms.create (AD.Mat.gaussian ~sigma:sigma2 nh n)
-    ; bias1 = Prms.create (AD.Mat.gaussian 1 nh)
+    ; bias1 = Prms.create (AD.Mat.uniform ~a:(-2.) ~b:2. 1 nh)
     ; bias2 = Prms.create (AD.Mat.zeros 1 n)
     ; b = Some (Prms.create (AD.Mat.gaussian ~sigma:Float.(1. / sqrt (of_int m)) m n))
     }
@@ -208,19 +208,25 @@ struct
   let dyn ~theta =
     let u_eff = u_eff ~prms:theta in
     let passive x =
-      (x *@ theta.a0)
-      + (F Float.(dt / tau)
-         * ((phi ((x *@ theta.a1) + theta.bias1) *@ theta.a2) + theta.bias2))
+      x
+      + (((x *@ theta.a0)
+          - x
+          + (phi ((x *@ theta.a1) + theta.bias1) *@ theta.a2)
+          + theta.bias2)
+         * theta.dt_over_tau)
     in
     fun ~k ~x ~u ->
-      if k = 0 then passive x + u else passive x + (F Float.(dt / tau) * u_eff u)
+      if k = 0 then passive x + u else passive x + (theta.dt_over_tau * u_eff u)
 
 
   let dyn_x =
     let dyn_x ~theta =
+      let n = AD.Mat.row_num theta.a0 in
+      let id_n = AD.Mat.eye n in
+      let a0_eff = id_n + ((theta.a0 - id_n) * theta.dt_over_tau) in
       fun ~k:_ ~x ~u:_ ->
-      let h = (x *@ theta.a1) + theta.bias1 in
-      (F Float.(dt / tau) * (theta.a1 * d_phi h *@ theta.a2)) + theta.a0
+        let h = (x *@ theta.a1) + theta.bias1 in
+        (theta.a1 * d_phi h *@ theta.a2 * theta.dt_over_tau) + a0_eff
     in
     Some dyn_x
 
@@ -234,7 +240,7 @@ struct
         | None -> id_n
         | Some b -> b
       in
-      let b = F Float.(dt / tau) * b in
+      let b = b * theta.dt_over_tau in
       fun ~k ~x:_ ~u:_ -> if k = 0 then id_n else b
     in
     Some dyn_u

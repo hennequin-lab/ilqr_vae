@@ -193,7 +193,7 @@ struct
     ; a0 = Prms.create (F 0.5 * AD.Mat.eye n)
     ; a1 = Prms.create (AD.Mat.gaussian ~sigma:sigma1 n nh)
     ; a2 = Prms.create (AD.Mat.gaussian ~sigma:sigma2 nh n)
-    ; bias1 = Prms.create (AD.Mat.uniform ~a:(-2.) ~b:2. 1 nh)
+    ; bias1 = Prms.create (AD.Mat.uniform ~a:(-1.) ~b:1. 1 nh)
     ; bias2 = Prms.create (AD.Mat.zeros 1 n)
     ; b = Some (Prms.create (AD.Mat.gaussian ~sigma:Float.(1. / sqrt (of_int m)) m n))
     }
@@ -241,6 +241,83 @@ struct
         | Some b -> b
       in
       let b = b * theta.dt_over_tau in
+      fun ~k ~x:_ ~u:_ -> if k = 0 then id_n else b
+    in
+    Some dyn_u
+end
+
+module GNODE (X : sig
+    val phi : (AD.t -> AD.t) * (AD.t -> AD.t)
+  end) =
+struct
+  module P = Dynamics_intf.GNODE_P
+  open P
+  open X
+  open AD.Maths
+
+  let phi, dphi = phi
+
+  let dsigmoid x =
+    let ex = exp (neg x) in
+    let d = F 1. + ex in
+    ex / sqr d
+
+
+  let requires_linesearch = true
+
+  let init ?(radius = 0.1) ~dt ~tau ~n ~nh () =
+    let dt_over_tau = Float.(dt / tau) in
+    { dt_over_tau
+    ; g_a1 = Prms.create (AD.Mat.zeros n n)
+    ; g_bias1 = Prms.create (AD.Mat.ones 1 n * F 2.) (* decay close to 0.9 *)
+    ; h_a1 = Prms.create (AD.Mat.gaussian ~sigma:Float.(1. / sqrt (of_int n)) n nh)
+    ; h_a2 = Prms.create (AD.Mat.gaussian ~sigma:Float.(radius / sqrt (of_int nh)) nh n)
+    ; h_bias1 = Prms.create (AD.Mat.zeros 1 nh)
+    ; h_bias2 = Prms.create (AD.Mat.zeros 1 n)
+    ; b = None
+    }
+
+
+  let g ~theta x = sigmoid ((x *@ theta.g_a1) + theta.g_bias1)
+  let h ~theta x = (phi ((x *@ theta.h_a1) + theta.h_bias1) *@ theta.h_a2) + theta.h_bias2
+
+  let gdg ~theta x =
+    let z = (x *@ theta.g_a1) + theta.g_bias1 in
+    let g = sigmoid z in
+    let dg = theta.g_a1 * dsigmoid z in
+    g, dg
+
+
+  let hdh ~theta x =
+    let z = (x *@ theta.h_a1) + theta.h_bias1 in
+    let h = (phi z *@ theta.h_a2) + theta.h_bias2 in
+    let dh = theta.h_a1 * dphi z *@ theta.h_a2 in
+    h, dh
+
+
+  let dyn ~theta =
+    let passive x = x + (F theta.dt_over_tau * g ~theta x * (h ~theta x - x)) in
+    fun ~k ~x ~u -> if k = 0 then passive x + u else passive x + (F theta.dt_over_tau * u)
+
+
+  let dyn_x =
+    (* checked to be numerically identical to AD jacobian *)
+    let dyn_x ~theta =
+      let n = AD.Mat.row_num theta.g_a1 in
+      let id_n = AD.Mat.eye n in
+      fun ~k:_ ~x ~u:_ ->
+        let g, dg = gdg ~theta x in
+        let h, dh = hdh ~theta x in
+        id_n + (F theta.dt_over_tau * ((g * (dh - id_n)) + (dg * (h - x))))
+    in
+    Some dyn_x
+
+
+  let dyn_u =
+    let dyn_u ~theta =
+      let n = AD.Mat.row_num theta.g_a1 in
+      let id_n = AD.Mat.eye n in
+      let b = id_n * F theta.dt_over_tau in
       fun ~k ~x:_ ~u:_ -> if k = 0 then id_n else b
     in
     Some dyn_u

@@ -14,14 +14,6 @@ module Make (A : Prms.Intf.A) = struct
     ; f : AD.t
     }
 
-  let _is_pos_def x =
-    try
-      ignore (AD.Linalg.chol x);
-      true
-    with
-    | _exn -> false
-
-
   (* solve ell^T ell x = b for x, with ell upper triangular *)
   let triangular_solve ell b =
     (* ell^T z = b *)
@@ -42,7 +34,7 @@ module Make (A : Prms.Intf.A) = struct
           let qxx = AD.Maths.(rlxx + (a *@ vxx *@ at)) in
           let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
           let quu = AD.Maths.((quu + transpose quu) / F 2.) in
-          let mu = max mu 1e-8 in
+          let mu = max mu 1e-6 in
           let qtuu = AD.Maths.(quu + (AD.F mu * b *@ bt)) in
           let is_pos_def, qtuu_chol =
             try true, Some (AD.Linalg.chol ~upper:true qtuu) with
@@ -64,11 +56,9 @@ module Make (A : Prms.Intf.A) = struct
             let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
             let qtux = AD.Maths.(qux + (F mu * b *@ at)) in
             let _K =
-              (* AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg *)
               triangular_solve qtuu_chol qtux |> AD.Maths.transpose |> AD.Maths.neg
             in
             let _k =
-              (* AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu)) *)
               triangular_solve qtuu_chol (AD.Maths.transpose qu)
               |> AD.Maths.transpose
               |> AD.Maths.neg
@@ -78,7 +68,7 @@ module Make (A : Prms.Intf.A) = struct
             let vx = AD.Maths.(qx + (qu *@ transpose _K)) in
             let acc = (s, (_K, _k)) :: acc in
             let df1 = AD.Maths.(df1 + sum' (_k * qu)) in
-            let df2 = AD.Maths.(df2 + sum' (_k * (quu *@ transpose _k))) in
+            let df2 = AD.Maths.(df2 + sum' (_k * (_k *@ quu))) in
             backward (delta, mu) (k - 1, vxx, vx, df1, df2, acc) tl)
         | [] -> k, vxx, vx, df1, df2, acc
       in

@@ -243,6 +243,19 @@ struct
     tr u, tr z, o
 
 
+  let predictions_deterministic ~prms mu_u =
+    let u = AD.expand0 mu_u in
+    let z = Integrate.integrate ~prms:prms.dynamics ~n ~u in
+    let tr = AD.Maths.transpose ~axis:[| 1; 2; 0 |] in
+    let o =
+      L.pre_sample ~prms:prms.likelihood ~z:(AD.Maths.reshape z [| n_steps; n |])
+      |> L.to_mat_list
+      |> Array.of_list
+      |> Array.map ~f:(fun (label, o) -> label, tr (AD.expand0 o))
+    in
+    tr u, tr z, o
+
+
   let lik_term ~prms =
     let logp = logp ~prms in
     let dyn = Integrate.integrate ~prms:prms.dynamics in
@@ -361,6 +374,7 @@ struct
         ?(n_samples = 1)
         ?(mini_batch : int option)
         ?conv_threshold
+        ?beta
         ?reg
         (prms : P.t)
         (data : L.data data array)
@@ -389,7 +403,7 @@ struct
               let open AD in
               let prms = P.make_reverse prms (AD.tag ()) in
               let elbo, _mu_u =
-                elbo ?conv_threshold ~mu_u:(`guess None) ~n_samples ~prms datai
+                elbo ?conv_threshold ?beta ~mu_u:(`guess None) ~n_samples ~prms datai
               in
               (* loss normalised by problem size *)
               let loss =
@@ -428,140 +442,6 @@ struct
     in
     Float.(loss / of_int total_count), average_gradient
 
-
-  (*
-     let train
-        ?(n_samples = fun _ -> 1)
-        ?(mini_batch : int option)
-        ?max_iter
-        ?conv_threshold
-        ?(mu_u : posterior_mean array option)
-        ?(recycle_u = true)
-        ?save_progress_to
-        ?in_each_iteration
-        ?eta
-        ?reg
-        ~init_prms
-        data
-    =
-    let n_samples_ = ref (n_samples 1) in
-    let n_trials = Array.length data in
-    (* make sure all workers have the same data *)
-    let data = C.broadcast data in
-    (* make sure all workers have different random seeds *)
-    C.self_init_rng ();
-    let module Packer = Owl_parameters.Packer () in
-    let handle = P.pack (module Packer) init_prms in
-    let theta, lbound, ubound = Packer.finalize () in
-    let theta = AD.unpack_arr theta in
-    let us_init =
-      match mu_u with
-      | Some z -> z
-      | None -> Array.create ~len:n_trials (Guess None)
-    in
-    let adam_loss _ theta gradient =
-      Stdlib.Gc.full_major ();
-      let theta = C.broadcast theta in
-      let data_batch =
-        match mini_batch with
-        | None -> data
-        | Some size ->
-          let ids =
-            C.broadcast' (fun () ->
-              let ids = Array.mapi data ~f:(fun i _ -> i) in
-              Array.permute ids;
-              Array.sub ids ~pos:0 ~len:size)
-          in
-          Array.map ids ~f:(Array.get data)
-      in
-      let count, loss, g =
-        Array.foldi
-          data_batch
-          ~init:(0, 0., Arr.(zeros (shape theta)))
-          ~f:(fun i (accu_count, accu_loss, accu_g) datai ->
-            if Int.(i % C.n_nodes = C.rank)
-            then (
-              try
-                let open AD in
-                let theta = make_reverse (Arr (Owl.Mat.copy theta)) (AD.tag ()) in
-                let prms = P.unpack handle theta in
-                let u_init =
-                  match us_init.(i) with
-                  | `guess z -> `guess z
-                  | `known z -> `known (Option.value_exn z)
-                in
-                let elbo, mu_u =
-                  elbo ?conv_threshold ~u_init ~n_samples:!n_samples_ ~prms datai
-                in
-                if recycle_u
-                then (
-                  match u_init with
-                  | `guess _ -> us_init.(i) <- `guess (Some mu_u)
-                  | `known _ -> ());
-                let loss = AD.Maths.(neg elbo) in
-                (* normalize by the problem size *)
-                let loss =
-                  AD.Maths.(
-                    loss
-                    / F
-                        Float.(
-                          of_int
-                            Int.(n_steps * L.size ~prms:init_prms.generative.likelihood)))
-                in
-                (* optionally add regularizer *)
-                let loss =
-                  match reg with
-                  | None -> loss
-                  | Some r -> AD.Maths.(loss + r ~prms)
-                in
-                reverse_prop (F 1.) loss;
-                ( accu_count + 1
-                , accu_loss +. unpack_flt loss
-                , Owl.Mat.(accu_g + unpack_arr (adjval theta)) )
-              with
-              | _ ->
-                Stdio.printf "Trial %i failed with some exception." i;
-                accu_count, accu_loss, accu_g)
-            else accu_count, accu_loss, accu_g)
-      in
-      let total_count = Mpi.reduce_int count Mpi.Int_sum 0 Mpi.comm_world in
-      let loss = Mpi.reduce_float loss Mpi.Float_sum 0 Mpi.comm_world in
-      Mpi.reduce_bigarray g gradient Mpi.Sum 0 Mpi.comm_world;
-      Mat.div_scalar_ gradient Float.(of_int total_count);
-      Float.(loss / of_int total_count)
-    in
-    let stop iter current_loss =
-      n_samples_ := n_samples iter;
-      Option.iter in_each_iteration ~f:(fun do_this ->
-        let prms = P.unpack handle (AD.pack_arr theta) in
-        let u_init =
-          Array.map us_init ~f:(function
-            | `known _ -> None
-            | `guess z -> z)
-        in
-        do_this ~u_init ~prms iter);
-      C.root_perform (fun () ->
-        Stdio.printf "\r[%05i]%!" iter;
-        Option.iter save_progress_to ~f:(fun (loss_every, prms_every, prefix) ->
-          let kk = Int.((iter - 1) / loss_every) in
-          if Int.((iter - 1) % prms_every) = 0
-          then (
-            let prefix = Printf.sprintf "%s_%i" prefix kk in
-            let prms = P.unpack handle (AD.pack_arr theta) in
-            Misc.save_bin ~out:(prefix ^ ".params.bin") prms;
-            P.save_to_files ~prefix prms);
-          if Int.((iter - 1) % loss_every) = 0
-          then (
-            Stdio.printf "\r[%05i] %.4f%!" iter current_loss;
-            let z = [| [| Float.of_int kk; current_loss |] |] in
-            Mat.(save_txt ~append:true (of_arrays z) ~out:(prefix ^ ".loss")))));
-      match max_iter with
-      | Some mi -> iter > mi
-      | None -> false
-    in
-    let _ = Adam.min ?eta ?lb:lbound ?ub:ubound ~stop adam_loss theta in
-    theta |> AD.pack_arr |> P.unpack handle
-  *)
 
   (*
      let recalibrate_uncertainty
@@ -614,16 +494,14 @@ struct
   *)
 
   (*
-     let check_grad ~prms data n_points file =
+  let check_grad ~prms data n_points file =
     let seed = Random.int 31415 in
     let u_init = Array.map data ~f:(fun _ -> `guess None) in
     let elbo_all ~prms =
       let _ = Owl_stats_prng.init seed in
-      elbo_all ~u_init ~n_samples:2 ~beta:1. ~prms
+      elbo ~mu_u:(`guess None) ~n_samples:2 ~prms data |> fst
     in
-    let module Packer = Owl_parameters.Packer () in
-    let handle = P.pack (module Packer) prms in
-    let theta, _, _ = Packer.finalize () in
+    let prms =
     let theta = AD.unpack_arr theta in
     let loss, true_g =
       let theta = AD.make_reverse (Arr (Mat.copy theta)) (AD.tag ()) in
@@ -655,7 +533,7 @@ struct
     |> Mat.of_arrays
     |> Mat.save_txt ~out:file
     |> fun _ -> Stdio.print_endline ""
-  *)
+    *)
 
   let save_data ?prefix data =
     Option.iter data.u ~f:(fun u ->

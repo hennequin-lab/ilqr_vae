@@ -63,6 +63,11 @@ module Make
     -> AD.t
     -> AD.t * AD.t * (string * AD.t) Array.t
 
+  val predictions_deterministic
+    :  prms:P.t'
+    -> AD.t
+    -> AD.t * AD.t * (string * AD.t) Array.t
+
   val elbo
     :  ?conv_threshold:float
     -> mu_u:[ `known of AD.t | `guess of AA.arr option ]
@@ -77,6 +82,7 @@ module Make
     :  ?n_samples:int
     -> ?mini_batch:int
     -> ?conv_threshold:float
+    -> ?beta:float
     -> ?reg:(prms:P.t' -> AD.t)
     -> P.t
     -> L.data data array

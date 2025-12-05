@@ -47,3 +47,19 @@ module Linear_nonlinear_P = struct
 
   include Make (Prms.Single) (Prms.Option (Prms.Single))
 end
+
+module GNODE_P = struct
+  type ('a, 'opt) prm =
+    { dt_over_tau : float
+    ; g_a1 : 'a
+    ; g_bias1 : 'a
+    ; h_a1 : 'a
+    ; h_a2 : 'a
+    ; h_bias1 : 'a
+    ; h_bias2 : 'a
+    ; b : 'opt
+    }
+  [@@deriving prms, accessors ~submodule:A]
+
+  include Make (Prms.Single) (Prms.Option (Prms.Single))
+end

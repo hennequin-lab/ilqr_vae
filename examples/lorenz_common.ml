@@ -27,7 +27,6 @@ struct
   module D = Dynamics.Linear_nonlinear (struct
       let phi = AD.Maths.tanh, fun x -> AD.Maths.(F 1. - sqr (tanh x))
       let dt = 0.01
-      let tau = 1.
     end)
 
   module Model =

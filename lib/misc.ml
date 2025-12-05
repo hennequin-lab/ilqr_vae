@@ -37,7 +37,7 @@ module AD = struct
   and d_requad x = Stdlib.Lazy.force _d_requad x
   and d2_requad x = Stdlib.Lazy.force _d2_requad x
   and rq x = Float.(0.5 * (x + sqrt (4. + square x)))
-  and rqv x = AA.(0.5 $* x + sqrt (4. $+ sqr x))
+  and rqv x = AA.((x + sqrt (4. $+ sqr x)) *$ 0.5)
 
   and drq x =
     let tmp = Float.(sqrt (4. + square x)) in

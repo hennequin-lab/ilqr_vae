@@ -37,3 +37,11 @@ module Linear_nonlinear (X : sig
 
   val init : ?radius:float -> tau:float -> n:int -> nh:int -> m:int -> unit -> P.t
 end
+
+module GNODE (X : sig
+    val phi : (AD.t -> AD.t) * (AD.t -> AD.t)
+  end) : sig
+  include T with module P = Dynamics_intf.GNODE_P
+
+  val init : ?radius:float -> dt:float -> tau:float -> n:int -> nh:int -> unit -> P.t
+end

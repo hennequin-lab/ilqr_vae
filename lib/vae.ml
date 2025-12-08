@@ -462,7 +462,7 @@ struct
         ?(mini_batch : int option)
         ?conv_threshold
         ?reg
-        (prms : P.t)
+        (prms : P.t')
         (data : L.data data array)
     =
     let data_batch =
@@ -485,7 +485,6 @@ struct
           Stdlib.Gc.major ();
           try
             let open AD in
-            let prms = P.make_reverse prms (AD.tag ()) in
             let elbo, _mu_u =
               elbo ?conv_threshold ~mu_u:(`guess None) ~n_samples ~prms datai
             in

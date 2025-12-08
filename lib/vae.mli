@@ -90,7 +90,7 @@ module Make
     -> ?mini_batch:int
     -> ?conv_threshold:float
     -> ?reg:(prms:P.t' -> AD.t)
-    -> P.t
+    -> P.t'
     -> L.data data array
     -> float
 

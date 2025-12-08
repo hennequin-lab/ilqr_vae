@@ -456,6 +456,62 @@ struct
     Float.(loss / of_int total_count), average_gradient
 
 
+  (* Calculate elbo loss only. Do not backpropagate. *)
+  let elbo_no_gradient
+        ?(n_samples = 1)
+        ?(mini_batch : int option)
+        ?conv_threshold
+        ?reg
+        (prms : P.t)
+        (data : L.data data array)
+    =
+    let data_batch =
+      match mini_batch with
+      | None -> data
+      | Some size ->
+        if Int.(size % C.n_nodes <> 0)
+        then failwith "mini_batch size should be a multiple of C.n_nodes";
+        let ids =
+          C.broadcast' (fun () ->
+            let ids = List.(permute (range 0 (Array.length data)) |> to_array) in
+            Array.sub ids ~pos:0 ~len:size)
+        in
+        Array.map ids ~f:(Array.get data)
+    in
+    let count, loss =
+      Array.foldi data_batch ~init:(0, 0.) ~f:(fun i (accu_count, accu_loss) datai ->
+        if Int.(i % C.n_nodes = C.rank)
+        then (
+          Stdlib.Gc.major ();
+          try
+            let open AD in
+            let prms = P.make_reverse prms (AD.tag ()) in
+            let elbo, _mu_u =
+              elbo ?conv_threshold ~mu_u:(`guess None) ~n_samples ~prms datai
+            in
+            (* loss normalised by problem size *)
+            let loss =
+              Maths.(
+                neg elbo / F Float.(of_int Int.(n_steps * L.size ~prms:prms.likelihood)))
+            in
+            (* optionally add regularizer *)
+            let loss =
+              match reg with
+              | None -> loss
+              | Some r -> Maths.(loss + r ~prms)
+            in
+            accu_count + 1, Float.(accu_loss + unpack_flt loss)
+          with
+          | _ ->
+            Stdio.printf "Trial %i failed with some exception." i;
+            accu_count, accu_loss)
+        else accu_count, accu_loss)
+    in
+    let total_count = Mpi.reduce_int count Mpi.Int_sum 0 Mpi.comm_world in
+    let loss = Mpi.reduce_float loss Mpi.Float_sum 0 Mpi.comm_world in
+    Float.(loss / of_int total_count)
+
+
   (*
      let train
         ?(n_samples = fun _ -> 1)

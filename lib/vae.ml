@@ -275,14 +275,15 @@ struct
     open Actual_prior
 
     let kl_term ~(prms : P.t') =
+      let stick x = AD.primal' x in
       let au_prms = extract_prior_prms prms in
       match AU.kl_to_gaussian with
       | `sampling_based ->
         let logp = AU.logp ~prms:au_prms ~n_steps in
         let logq =
           (* sticking the landing... *)
-          let space_cov = Covariance.P.map ~f:AD.primal' prms.space_cov in
-          let time_cov = Covariance.P.map ~f:AD.primal' prms.time_cov in
+          let space_cov = Covariance.P.map ~f:stick prms.space_cov in
+          let time_cov = Covariance.P.map ~f:stick prms.time_cov in
           let c_space = Covariance.to_chol_factor space_cov in
           let c_time = Covariance.to_chol_factor time_cov in
           let m_ = AD.Mat.row_num c_space in
@@ -326,7 +327,7 @@ struct
           assert (Array.length u_s = 3);
           let n_samples = u_s.(0) in
           (* compute log q(u) - log p(u) *)
-          let logqu = logq (AD.primal' mu_u) u in
+          let logqu = logq (stick mu_u) u in
           let logpu = logp u in
           AD.Maths.((logqu - logpu) / F Float.(of_int n_samples))
       | `direct f ->

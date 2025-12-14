@@ -38,11 +38,6 @@ module Integrate (D : T) = struct
   (* result KxTxN *)
 end
 
-let b_rescaled b =
-  let open AD.Maths in
-  Option.map b ~f:(function b -> b / sqrt (sum ~axis:0 (sqr b)))
-
-
 module Linear = struct
   module P = Dynamics_intf.Linear_P
   open P
@@ -67,7 +62,8 @@ module Linear = struct
       AA.Linalg.expm AA.(s - transpose s)
     in
     let b = if n = m then None else Some (Prms.create (AD.Mat.gaussian m n)) in
-    { d = Prms.create ~above:(F 1E-5) (AD.pack_arr d)
+    { dt_over_tau
+    ; d = Prms.create ~above:(F 1E-5) (AD.pack_arr d)
     ; u = Prms.create u
     ; q = Prms.create (AD.pack_arr q)
     ; b
@@ -88,17 +84,9 @@ module Linear = struct
     u * d_sqrt *@ (q * dp1_sqrt_inv) *@ transpose u
 
 
-  let extract_b ~theta ~n =
-    match b_rescaled theta.b with
-    | None -> AD.Mat.(eye n)
-    | Some b -> b
-
-
   let dyn ~theta =
     let a = unpack_a ~prms:theta in
-    let n = AD.Mat.row_num a in
-    let b = extract_b ~theta ~n in
-    fun ~k ~x ~u -> if k = 0 then (x *@ a) + u else (x *@ a) + (u *@ b)
+    fun ~k ~x ~u -> (x *@ a) + if k = 0 then u else F theta.dt_over_tau * u
 
 
   let dyn_x =
@@ -113,62 +101,8 @@ module Linear = struct
     let dyn_u ~theta =
       let n = AD.Mat.row_num theta.q in
       let id_n = AD.Mat.eye n in
-      let b = extract_b ~theta ~n in
-      fun ~k ~x:_ ~u:_ -> if k = 0 then id_n else b
-    in
-    Some dyn_u
-end
-
-module Nonlinear (X : sig
-    val phi : [ `linear | `nonlinear of (AD.t -> AD.t) * (AD.t -> AD.t) ]
-  end) =
-struct
-  module P = Dynamics_intf.Nonlinear_P
-  open P
-  open X
-  open AD.Maths
-
-  let phi, d_phi, requires_linesearch =
-    match phi with
-    | `linear -> (fun x -> x), (fun x -> AD.Arr.(ones (shape x))), false
-    | `nonlinear (f, df) -> f, df, true
-
-
-  let init ?(radius = 0.1) ~n ~m () =
-    let sigma = Float.(radius / sqrt (of_int n)) in
-    { a = Prms.create (AD.Mat.gaussian ~sigma n n)
-    ; bias = Prms.create (AD.Mat.zeros 1 n)
-    ; b = Some (Prms.create (AD.Mat.gaussian ~sigma:Float.(1. / sqrt (of_int m)) m n))
-    }
-
-
-  let u_eff ~prms =
-    match b_rescaled prms.b with
-    | None -> fun u -> u
-    | Some b -> fun u -> u *@ b
-
-
-  let dyn ~theta =
-    let u_eff = u_eff ~prms:theta in
-    let passive x = (phi x *@ theta.a) + theta.bias in
-    fun ~k ~x ~u -> if k = 0 then passive x + u else passive x + u_eff u
-
-
-  let dyn_x =
-    let dyn_x ~theta = fun ~k:_ ~x ~u:_ -> transpose (d_phi x) * theta.a in
-    Some dyn_x
-
-
-  let dyn_u =
-    let dyn_u ~theta =
-      let n = AD.Mat.row_num theta.a in
-      let id_n = AD.Mat.eye n in
-      let b =
-        match b_rescaled theta.b with
-        | None -> id_n
-        | Some b -> b
-      in
-      fun ~k ~x:_ ~u:_ -> if k = 0 then id_n else b
+      let id_n' = F theta.dt_over_tau * id_n in
+      fun ~k ~x:_ ~u:_ -> if k = 0 then id_n else id_n'
     in
     Some dyn_u
 end
@@ -199,14 +133,7 @@ struct
     }
 
 
-  let u_eff ~prms =
-    match b_rescaled prms.b with
-    | None -> fun u -> u
-    | Some b -> fun u -> AD.Maths.(u *@ b)
-
-
   let dyn ~theta =
-    let u_eff = u_eff ~prms:theta in
     let passive x =
       x
       + (((x *@ theta.a0)
@@ -215,8 +142,7 @@ struct
           + theta.bias2)
          * theta.dt_over_tau)
     in
-    fun ~k ~x ~u ->
-      if k = 0 then passive x + u else passive x + (theta.dt_over_tau * u_eff u)
+    fun ~k ~x ~u -> passive x + if k = 0 then u else theta.dt_over_tau * u
 
 
   let dyn_x =
@@ -235,13 +161,8 @@ struct
     let dyn_u ~theta =
       let n = AD.Mat.row_num theta.a1 in
       let id_n = AD.Mat.eye n in
-      let b =
-        match b_rescaled theta.b with
-        | None -> id_n
-        | Some b -> b
-      in
-      let b = b * theta.dt_over_tau in
-      fun ~k ~x:_ ~u:_ -> if k = 0 then id_n else b
+      let id_n' = theta.dt_over_tau * id_n in
+      fun ~k ~x:_ ~u:_ -> if k = 0 then id_n else id_n'
     in
     Some dyn_u
 end

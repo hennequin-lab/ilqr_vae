@@ -12,20 +12,10 @@ end
 
 module Linear_P = struct
   type ('a, 'opt) prm =
-    { d : 'a
+    { dt_over_tau : float
+    ; d : 'a
     ; u : 'a
     ; q : 'a
-    ; b : 'opt
-    }
-  [@@deriving prms, accessors ~submodule:A]
-
-  include Make (Prms.Single) (Prms.Option (Prms.Single))
-end
-
-module Nonlinear_P = struct
-  type ('a, 'opt) prm =
-    { a : 'a
-    ; bias : 'a
     ; b : 'opt
     }
   [@@deriving prms, accessors ~submodule:A]

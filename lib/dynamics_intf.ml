@@ -22,6 +22,16 @@ module Linear_P = struct
   include Make (Prms.Single) (Prms.Option (Prms.Single))
 end
 
+module Linear_unconstrained_P = struct
+  type ('a, 'opt) prm =
+    { a : 'a
+    ; b : 'opt
+    }
+  [@@deriving prms, accessors ~submodule:A]
+
+  include Make (Prms.Single) (Prms.Option (Prms.Single))
+end
+
 module Nonlinear_P = struct
   type ('a, 'opt) prm =
     { a : 'a

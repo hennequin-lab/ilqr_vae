@@ -152,6 +152,112 @@ struct
     Some dyn_u
 end
 
+module Linear_unconstrained (X : sig
+    val n_beg : int Option.t
+  end) =
+struct
+  module P = Dynamics_intf.Linear_unconstrained_P
+  open P
+  open AD.Maths
+
+  let requires_linesearch = false
+
+  let unpack_a ~q ~u ~d =
+    let q =
+      let q, r = AD.Linalg.qr q in
+      q * signum (diag r)
+    in
+    let u =
+      let q, r = AD.Linalg.qr u in
+      q * signum (diag r)
+    in
+    let dp1_sqrt_inv = F 1. / sqrt (F 1. + d) in
+    let d_sqrt = sqrt d in
+    u * d_sqrt *@ (q * dp1_sqrt_inv) *@ transpose u
+
+
+  (* alpha is the spectral abscissa of the equivalent continuous-time system
+   beta is the spectral radius of the random S *)
+  let init ~dt_over_tau ~alpha ~beta ~n ~m () =
+    (* exp (dt_over_tau * (W-I))
+     where W = alpha*I + S *)
+    let d =
+      let tmp = Float.(exp (-2. * dt_over_tau * (1.0 - alpha))) in
+      AA.init [| 1; n |] (fun _ -> Float.(tmp / (1. - tmp))) |> AD.pack_arr
+    in
+    let u = AD.Mat.eye n in
+    let q =
+      let s =
+        AA.(Float.(beta * dt_over_tau / sqrt (2. * of_int n)) $* gaussian [| n; n |])
+      in
+      AA.Linalg.expm AA.(s - transpose s) |> AD.pack_arr
+    in
+    let a = unpack_a ~q ~u ~d in
+    let b = if n = m then None else Some (Prms.create (AD.Mat.gaussian m n)) in
+    { a = Prms.create a; b }
+
+
+  let generate_bs ~n ~m =
+    Option.map X.n_beg ~f:(fun nb ->
+      let nr = Int.(n / nb) in
+      assert (nr = m);
+      ( nb
+      , Array.init nb ~f:(fun i ->
+          let inr = Int.(i * nr) in
+          let rnr = Int.(n - ((i + 1) * nr)) in
+          transpose
+            (concatenate
+               ~axis:0
+               [| AD.Mat.zeros inr m; AD.Mat.eye nr; AD.Mat.zeros rnr m |])) ))
+
+
+  let extract_b ~theta ~n =
+    match b_rescaled theta.b with
+    | None -> AD.Mat.(eye n)
+    | Some b -> b
+
+
+  let dyn ~theta =
+    let a = theta.a in
+    let n = AD.Mat.row_num a in
+    let b = extract_b ~theta ~n in
+    let m = AD.Mat.row_num b in
+    let beg_bs = generate_bs ~n ~m in
+    let default x u = (x *@ a) + (u *@ b) in
+    fun ~k ~x ~u ->
+      match beg_bs with
+      | None -> default x u
+      | Some (i, beg_b) -> if k < i then x + (u *@ beg_b.(k)) else default x u
+
+
+  let dyn_x =
+    (* Marine to check this *)
+    let dyn_x ~theta =
+      let a = theta.a in
+      let n = AD.Mat.row_num a in
+      let id_n = AD.Mat.eye n in
+      fun ~k ~x:_ ~u:_ ->
+        match X.n_beg with
+        | None -> a
+        | Some i -> if k < i then id_n else a
+    in
+    Some dyn_x
+
+
+  let dyn_u =
+    let dyn_u ~theta =
+      let n = AD.Mat.row_num theta.a in
+      let b = extract_b ~theta ~n in
+      let m = AD.Mat.row_num b in
+      let beg_bs = generate_bs ~n ~m in
+      fun ~k ~x:_ ~u:_ ->
+        match beg_bs with
+        | None -> b
+        | Some (i, beg_b) -> if k < i then beg_b.(k) else b
+    in
+    Some dyn_u
+end
+
 module Nonlinear (X : sig
     val phi : [ `linear | `nonlinear of (AD.t -> AD.t) * (AD.t -> AD.t) ]
     val n_beg : int Option.t

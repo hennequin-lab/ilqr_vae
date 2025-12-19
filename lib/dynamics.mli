@@ -23,6 +23,21 @@ module Linear (X : sig
   val unpack_a : prms:P.t' -> AD.t
 end
 
+module Linear_unconstrained (X : sig
+    val n_beg : int Option.t
+  end) : sig
+  include T with module P = Dynamics_intf.Linear_unconstrained_P
+
+  val init
+    :  dt_over_tau:float
+    -> alpha:float
+    -> beta:float
+    -> n:int
+    -> m:int
+    -> unit
+    -> P.t
+end
+
 module Nonlinear (X : sig
     val phi : [ `linear | `nonlinear of (AD.t -> AD.t) * (AD.t -> AD.t) ]
     val n_beg : int Option.t

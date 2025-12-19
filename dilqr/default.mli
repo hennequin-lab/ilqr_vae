@@ -1,6 +1,10 @@
-module Make (A : Prms.Intf.A) : sig
-  module Lqr : module type of Lqr.Make (A)
-  module AD : module type of Owl_algodiff_generic.Make (A)
+module Make (X : sig
+    module A : Prms.Intf.A
+
+    val verbose : bool
+  end) : sig
+  module Lqr : module type of Lqr.Make (X)
+  module AD : module type of Owl_algodiff_generic.Make (X.A)
 
   type 'a t = theta:'a -> k:int -> x:AD.t -> u:AD.t -> AD.t
   type 'a s = theta:'a -> k:int -> x:AD.t -> AD.t

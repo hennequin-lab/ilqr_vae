@@ -45,7 +45,7 @@ module Make
     -> unit
     -> P.t
 
-  val sample_generative : prms:P.t' -> L.data data
+  val sample_generative : ?pre:bool -> P.t' -> L.data data
   val sample_generative_autonomous : sigma:float -> prms:P.t' -> L.data data
 
   val posterior_mean

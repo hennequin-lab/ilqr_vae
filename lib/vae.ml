@@ -205,10 +205,10 @@ struct
     }
 
 
-  let sample_generative ~prms =
+  let sample_generative ?(pre = true) prms =
     let u = U.sample ~prms:prms.prior ~n_steps ~m in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:(AD.expand0 u) |> AD.squeeze0 in
-    let o = L.sample ~prms:prms.likelihood ~z in
+    let o = (if pre then L.pre_sample else L.sample) ~prms:prms.likelihood ~z in
     { u = Some u; z = Some z; o }
 
 

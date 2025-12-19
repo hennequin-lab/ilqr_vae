@@ -2,8 +2,14 @@ open Base
 
 (* let print s = Stdio.print_endline (Sexp.to_string_hum s) *)
 
-module Make (A : Prms.Intf.A) = struct
-  module Lqr = Lqr.Make (A)
+module Make (X : sig
+    module A : Prms.Intf.A
+
+    val verbose : bool
+  end) =
+struct
+  open X
+  module Lqr = Lqr.Make (X)
   module Bmo = Bmo.Make (A)
   module AD = Bmo.AD
   open AD.Builder

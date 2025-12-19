@@ -1,4 +1,9 @@
-module Make (A : Prms.Intf.A) : sig
+module Make (X : sig
+    module A : Prms.Intf.A
+
+    val verbose : bool
+  end) : sig
+  open X
   module AD : module type of Owl_algodiff_generic.Make (A)
 
   type t =

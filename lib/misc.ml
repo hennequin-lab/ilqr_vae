@@ -2,7 +2,13 @@ open Base
 
 (* change this AA module to change the precision globally *)
 module AA = Prms.Intf.D
-module DILQR = Dilqr.Default.Make (AA)
+
+module DILQR = Dilqr.Default.Make (struct
+    module A = AA
+
+    let verbose = false
+  end)
+
 module Prms = Prms.Make (AA)
 module Opt = Opt.Make (AA)
 

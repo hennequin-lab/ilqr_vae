@@ -1,4 +1,10 @@
-module Make (A : Prms.Intf.A) = struct
+module Make (X : sig
+    module A : Prms.Intf.A
+
+    val verbose : bool
+  end) =
+struct
+  open X
   module AD = Owl_algodiff_generic.Make (A)
 
   type t =
@@ -42,7 +48,7 @@ module Make (A : Prms.Intf.A) = struct
           in
           if not is_pos_def
           then (
-            if mu > 0. then Printf.printf "Regularizing... mu = %f \n%!" mu;
+            if verbose && mu > 0. then Printf.printf "Regularizing... mu = %f \n%!" mu;
             backward
               (Regularisation.increase (delta, mu))
               (kf - 1, flxx, flx, AD.F 0., AD.F 0., [])

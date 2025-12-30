@@ -58,8 +58,7 @@ struct
     prms.bias + (z *@ transpose c)
 
 
-  let sample ~prms ~z =
-    let mu = pre_sample ~prms ~z in
+  let sample_noise ~mu ~prms =
     let res =
       let xi = AD.Arr.(gaussian (shape mu)) in
       xi * sqrt prms.variances
@@ -177,10 +176,9 @@ struct
 
   let pre_sample ~prms ~z = link_function (pre_sample_before_link_function ~prms ~z)
 
-  let sample ~prms ~z =
-    let t = AD.Mat.row_num z in
+  let sample_noise ~mu ~prms:_ =
+    let t = AD.Mat.row_num mu in
     (* z is T x M *)
-    let mu = pre_sample ~prms ~z in
     let spikes =
       Owl_distribution_generic.poisson_rvs ~mu:(AD.unpack_arr (mu * dt)) ~n:1
     in
@@ -298,7 +296,9 @@ module Pair (L1 : T) (L2 : T) = struct
     L1.pre_sample ~prms:prms1 ~z, L2.pre_sample ~prms:prms2 ~z
 
 
-  let sample ~prms:(prms1, prms2) ~z = L1.sample ~prms:prms1 ~z, L2.sample ~prms:prms2 ~z
+  let sample_noise ~mu:(mu1, mu2) ~prms:(prms1, prms2) =
+    L1.sample_noise ~mu:mu1 ~prms:prms1, L2.sample_noise ~mu:mu2 ~prms:prms2
+
 
   let add f1 f2 ~prms:(prms1, prms2) =
     let f1 = f1 ~prms:prms1 in

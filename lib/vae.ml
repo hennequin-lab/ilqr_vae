@@ -205,23 +205,29 @@ struct
     }
 
 
-  let sample_generative ?(pre = true) prms =
+  let sample_generative ?(noisy = true) prms =
     let u = U.sample ~prms:prms.prior ~n_steps ~m in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:(AD.expand0 u) |> AD.squeeze0 in
-    let o = (if pre then L.pre_sample else L.sample) ~prms:prms.likelihood ~z in
-    { u = Some u; z = Some z; o }
+    let mu = L.pre_sample ~prms:prms.likelihood ~z in
+    let o_noised =
+      if noisy then Some (L.sample_noise ~mu ~prms:prms.likelihood) else None
+    in
+    u, z, mu, o_noised
 
 
   (* NON-DIFFERENTIABLE *)
-  let sample_generative_autonomous ~sigma ~(prms : P.t') =
+  let sample_generative_autonomous ?(noisy = true) ~sigma ~(prms : P.t') =
     let u =
       let u0 = AA.gaussian ~sigma [| 1; m |] in
       let u_rest = AA.zeros [| n_steps - 1; m |] in
       AD.pack_arr AA.(u0 @= u_rest)
     in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:(AD.expand0 u) |> AD.squeeze0 in
-    let o = L.sample ~prms:prms.likelihood ~z in
-    { u = Some u; z = Some z; o }
+    let mu = L.pre_sample ~prms:prms.likelihood ~z in
+    let o_noised =
+      if noisy then Some (L.sample_noise ~mu ~prms:prms.likelihood) else None
+    in
+    u, z, mu, o_noised
 
 
   let logp ~(prms : P.t') data =
@@ -278,7 +284,10 @@ struct
     let o =
       Array.init n_samples ~f:(fun i ->
         let z = AD.Maths.(reshape (get_slice [ [ i ] ] z) [| n_steps; n |]) in
-        let o = (if pre then L.pre_sample else L.sample) ~prms:prms.likelihood ~z in
+        let o =
+          let mu = L.pre_sample ~prms:prms.likelihood ~z in
+          if pre then mu else L.sample_noise ~prms:prms.likelihood ~mu
+        in
         o
         |> L.to_mat_list
         |> Array.of_list

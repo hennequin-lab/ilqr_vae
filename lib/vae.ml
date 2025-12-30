@@ -276,7 +276,7 @@ struct
       AD.Maths.(mu_u + z)
 
 
-  let predictions ?(pre = true) ~n_samples ~prms mu_u =
+  let predictions ?(noisy = false) ~n_samples ~prms mu_u =
     let u = sample_recognition ~prms ~mu_u n_samples in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u in
     let z = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] z in
@@ -286,7 +286,7 @@ struct
         let z = AD.Maths.(reshape (get_slice [ [ i ] ] z) [| n_steps; n |]) in
         let o =
           let mu = L.pre_sample ~prms:prms.likelihood ~z in
-          if pre then mu else L.sample_noise ~prms:prms.likelihood ~mu
+          if noisy then L.sample_noise ~prms:prms.likelihood ~mu else mu
         in
         o
         |> L.to_mat_list

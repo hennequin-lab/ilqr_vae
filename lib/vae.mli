@@ -64,7 +64,7 @@ module Make
   val sample_recognition : prms:P.t' -> mu_u:AD.t -> int -> AD.t
 
   val predictions
-    :  ?pre:bool
+    :  ?noisy:bool
     -> n_samples:int
     -> prms:P.t'
     -> AD.t

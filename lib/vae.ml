@@ -206,8 +206,10 @@ struct
 
 
   let sample_generative ?(noisy = true) prms =
-    let u = U.sample ~prms:prms.prior ~n_steps ~m in
+    let u = U.sample ~prms:prms.prior ~n_steps:(n_steps + n_beg - 1) ~m in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:(AD.expand0 u) |> AD.squeeze0 in
+    let u = AD.Maths.get_slice [ [ n_beg - 1; -1 ]; [] ] u in
+    let z = AD.Maths.get_slice [ [ n_beg - 1; -1 ]; [] ] z in
     let mu = L.pre_sample ~prms:prms.likelihood ~z in
     let o_noised =
       if noisy then Some (L.sample_noise ~mu ~prms:prms.likelihood) else None

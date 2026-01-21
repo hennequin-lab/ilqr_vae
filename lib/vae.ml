@@ -207,7 +207,7 @@ struct
 
   let sample_forward ?(noisy = true) ~u ~prms =
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:(AD.expand0 u) |> AD.squeeze0 in
-    let u = AD.Maths.get_slice [ [ n_beg - 1; -1 ]; [] ] u in
+    (* let u = AD.Maths.get_slice [ [ n_beg - 1; -1 ]; [] ] u in *)
     let z = AD.Maths.get_slice [ [ n_beg - 1; -1 ]; [] ] z in
     let mu = L.pre_sample ~prms:prms.likelihood ~z in
     let o_noised =

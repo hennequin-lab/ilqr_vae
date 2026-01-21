@@ -205,8 +205,7 @@ struct
     }
 
 
-  let sample_generative ?(noisy = true) prms =
-    let u = U.sample ~prms:prms.prior ~n_steps:(n_steps + n_beg - 1) ~m in
+  let sample_forward ?(noisy = true) ~u ~prms =
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:(AD.expand0 u) |> AD.squeeze0 in
     let u = AD.Maths.get_slice [ [ n_beg - 1; -1 ]; [] ] u in
     let z = AD.Maths.get_slice [ [ n_beg - 1; -1 ]; [] ] z in
@@ -217,6 +216,11 @@ struct
     u, z, mu, o_noised
 
 
+  let sample_generative ?(noisy = true) ~prms =
+    let u = U.sample ~prms:prms.prior ~n_steps:(n_steps + n_beg - 1) ~m in
+    sample_forward ~noisy ~u ~prms
+
+
   (* NON-DIFFERENTIABLE *)
   let sample_generative_autonomous ?(noisy = true) ~sigma ~(prms : P.t') =
     let u =
@@ -224,12 +228,7 @@ struct
       let u_rest = AA.zeros [| n_steps - 1; m |] in
       AD.pack_arr AA.(u0 @= u_rest)
     in
-    let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:(AD.expand0 u) |> AD.squeeze0 in
-    let mu = L.pre_sample ~prms:prms.likelihood ~z in
-    let o_noised =
-      if noisy then Some (L.sample_noise ~mu ~prms:prms.likelihood) else None
-    in
-    u, z, mu, o_noised
+    sample_forward ~noisy ~u ~prms
 
 
   let logp ~(prms : P.t') data =

@@ -45,7 +45,13 @@ module Make
     -> unit
     -> P.t
 
-  val sample_generative : ?noisy:bool -> P.t' -> AD.t * AD.t * L.data * L.data option
+  val sample_forward
+    :  ?noisy:bool
+    -> u:AD.t
+    -> prms:P.t'
+    -> AD.t * AD.t * L.data * L.data option
+
+  val sample_generative : ?noisy:bool -> prms:P.t' -> AD.t * AD.t * L.data * L.data option
 
   val sample_generative_autonomous
     :  ?noisy:bool

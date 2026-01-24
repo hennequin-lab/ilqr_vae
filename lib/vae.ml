@@ -224,7 +224,7 @@ struct
   (* NON-DIFFERENTIABLE *)
   let sample_generative_autonomous ?(noisy = true) ~sigma ~(prms : P.t') =
     let u =
-      let u0 = AA.gaussian ~sigma [| 1; m |] in
+      let u0 = AA.gaussian ~sigma [| n_beg; m |] in
       let u_rest = AA.zeros [| n_steps - 1; m |] in
       AD.pack_arr AA.(u0 @= u_rest)
     in

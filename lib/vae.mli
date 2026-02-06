@@ -55,8 +55,10 @@ module Make
 
   val sample_generative_autonomous
     :  ?noisy:bool
+    -> ?u_init:AA.arr
     -> sigma:float
     -> prms:P.t'
+    -> unit
     -> AD.t * AD.t * L.data * L.data option
 
   val posterior_mean
@@ -74,7 +76,7 @@ module Make
     -> n_samples:int
     -> prms:P.t'
     -> AD.t
-    -> AD.t * AD.t * (string * AD.t) Array.t
+    -> AD.t * AD.t * AD.t * (string * AD.t) Array.t
 
   val elbo
     :  ?conv_threshold:float

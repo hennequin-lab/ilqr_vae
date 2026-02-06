@@ -222,12 +222,14 @@ struct
 
 
   (* NON-DIFFERENTIABLE *)
-  let sample_generative_autonomous ?(noisy = true) ~sigma ~(prms : P.t') =
-    let u =
-      let u0 = AA.gaussian ~sigma [| n_beg; m |] in
-      let u_rest = AA.zeros [| n_steps - 1; m |] in
-      AD.pack_arr AA.(u0 @= u_rest)
+  let sample_generative_autonomous ?(noisy = true) ?u_init ~sigma ~(prms : P.t') () =
+    let u0 =
+      match u_init with
+      | None -> AA.gaussian ~sigma [| n_beg; m |]
+      | Some u -> u
     in
+    let u_rest = AA.zeros [| n_steps - 1; m |] in
+    let u = AD.pack_arr AA.(u0 @= u_rest) in
     sample_forward ~noisy ~u ~prms
 
 
@@ -278,10 +280,11 @@ struct
 
 
   let predictions ?(noisy = false) ~n_samples ~prms mu_u =
-    let u = sample_recognition ~prms ~mu_u n_samples in
-    let z = Integrate.integrate ~prms:prms.dynamics ~n ~u in
+    let u_tot = sample_recognition ~prms ~mu_u n_samples in
+    let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:u_tot in
     let z = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] z in
-    let u = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] u in
+    let u = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] u_tot in
+    let u_init = AD.Maths.get_slice [ []; [ 0; n_beg - 1 ]; [] ] u_tot in
     let o =
       Array.init n_samples ~f:(fun i ->
         let z = AD.Maths.(reshape (get_slice [ [ i ] ] z) [| n_steps; n |]) in
@@ -304,7 +307,7 @@ struct
         ( label
         , o |> Array.map ~f:(fun a -> snd a.(i)) |> AD.Maths.concatenate ~axis:0 |> tr ))
     in
-    tr u, tr z, o
+    tr u_init, tr u, tr z, o
 
 
   let lik_term ~prms =

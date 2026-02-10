@@ -223,7 +223,7 @@ struct
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u in
     let o =
       Array.init n_samples ~f:(fun i ->
-        let z = AD.Maths.(reshape (get_slice [ [ i ] ] z) [| n_steps; n |]) in
+        let z = AD.Maths.(reshape (get_slice [ [ i ] ] z) [| -1; n |]) in
         let o = (if pre then L.pre_sample else L.sample) ~prms:prms.likelihood ~z in
         o
         |> L.to_mat_list
@@ -248,7 +248,7 @@ struct
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u in
     let tr = AD.Maths.transpose ~axis:[| 1; 2; 0 |] in
     let o =
-      L.pre_sample ~prms:prms.likelihood ~z:(AD.Maths.reshape z [| n_steps; n |])
+      L.pre_sample ~prms:prms.likelihood ~z:(AD.Maths.reshape z [| -1; n |])
       |> L.to_mat_list
       |> Array.of_list
       |> Array.map ~f:(fun (label, o) -> label, tr (AD.expand0 o))

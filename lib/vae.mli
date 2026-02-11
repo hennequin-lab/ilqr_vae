@@ -88,6 +88,16 @@ module Make
     -> L.data data array
     -> float * P.t' option
 
+  (* returns [Some loss] at the root note, [None] elsewhere *)
+  val elbo_no_gradient
+    :  ?n_samples:int
+    -> ?mini_batch:int
+    -> ?conv_threshold:float
+    -> ?reg:(prms:P.t' -> AD.t)
+    -> P.t'
+    -> L.data data array
+    -> float
+
   (*
      val recalibrate_uncertainty
     :  ?n_samples:(int -> int)

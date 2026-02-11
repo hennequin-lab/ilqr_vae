@@ -78,6 +78,11 @@ module Make
     -> AD.t
     -> AD.t * AD.t * AD.t * (string * AD.t) Array.t
 
+  val predictions_deterministic
+    :  prms:P.t'
+    -> AD.t
+    -> AD.t * AD.t * (string * AD.t) Array.t
+
   val elbo
     :  ?conv_threshold:float
     -> mu_u:[ `known of AD.t | `guess of AA.arr option ]

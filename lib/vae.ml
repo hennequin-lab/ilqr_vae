@@ -310,6 +310,19 @@ struct
     tr u_init, tr u, tr z, o
 
 
+  let predictions_deterministic ~prms mu_u =
+    let u = AD.expand0 mu_u in
+    let z = Integrate.integrate ~prms:prms.dynamics ~n ~u in
+    let tr = AD.Maths.transpose ~axis:[| 1; 2; 0 |] in
+    let o =
+      L.pre_sample ~prms:prms.likelihood ~z:(AD.Maths.reshape z [| -1; n |])
+      |> L.to_mat_list
+      |> Array.of_list
+      |> Array.map ~f:(fun (label, o) -> label, tr (AD.expand0 o))
+    in
+    tr u, tr z, o
+
+
   let lik_term ~prms =
     let logp = logp ~prms in
     let dyn = Integrate.integrate ~prms:prms.dynamics in

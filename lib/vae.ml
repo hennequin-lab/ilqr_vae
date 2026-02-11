@@ -495,7 +495,7 @@ struct
   *)
 
   (*
-  let check_grad ~prms data n_points file =
+     let check_grad ~prms data n_points file =
     let seed = Random.int 31415 in
     let u_init = Array.map data ~f:(fun _ -> `guess None) in
     let elbo_all ~prms =
@@ -534,7 +534,7 @@ struct
     |> Mat.of_arrays
     |> Mat.save_txt ~out:file
     |> fun _ -> Stdio.print_endline ""
-    *)
+  *)
 
   let save_data ?prefix data =
     Option.iter data.u ~f:(fun u ->

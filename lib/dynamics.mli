@@ -81,3 +81,20 @@ module MGU2 (X : sig
 
   val init : n:int -> m:int -> unit -> P.t
 end
+
+module GNODE (X : sig
+    val n_beg : int Option.t
+    val phi : (AD.t -> AD.t) * (AD.t -> AD.t)
+  end) : sig
+  include T with module P = Dynamics_intf.GNODE_P
+
+  val init
+    :  ?radius:float
+    -> dt:float
+    -> tau:float
+    -> n:int
+    -> m:int
+    -> nh:int
+    -> unit
+    -> P.t
+end

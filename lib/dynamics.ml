@@ -693,3 +693,117 @@ struct
     in
     Some _dyn_u
 end
+
+module GNODE (X : sig
+    val phi : (AD.t -> AD.t) * (AD.t -> AD.t)
+    val n_beg : int Option.t
+  end) =
+struct
+  module P = Dynamics_intf.GNODE_P
+  open P
+  open X
+  open AD.Maths
+
+  let phi, dphi = phi
+
+  let dsigmoid x =
+    let ex = exp (neg x) in
+    let d = F 1. + ex in
+    ex / sqr d
+
+
+  let requires_linesearch = true
+
+  let init ?(radius = 0.1) ~dt ~tau ~n ~m ~nh () =
+    let dt_over_tau = Float.(dt / tau) in
+    let b = Prms.create (AD.Mat.gaussian m n) in
+    { dt_over_tau
+    ; g_a1 = Prms.create (AD.Mat.zeros n n)
+    ; g_bias1 = Prms.create (AD.Mat.ones 1 n * F 2.) (* decay close to 0.9 *)
+    ; h_a1 = Prms.create (AD.Mat.gaussian ~sigma:Float.(1. / sqrt (of_int n)) n nh)
+    ; h_a2 = Prms.create (AD.Mat.gaussian ~sigma:Float.(radius / sqrt (of_int nh)) nh n)
+    ; h_bias1 = Prms.create (AD.Mat.zeros 1 nh)
+    ; h_bias2 = Prms.create (AD.Mat.zeros 1 n)
+    ; b
+    }
+
+
+  let g ~theta x = sigmoid ((x *@ theta.g_a1) + theta.g_bias1)
+  let h ~theta x = (phi ((x *@ theta.h_a1) + theta.h_bias1) *@ theta.h_a2) + theta.h_bias2
+
+  let gdg ~theta x =
+    let z = (x *@ theta.g_a1) + theta.g_bias1 in
+    let g = sigmoid z in
+    let dg = theta.g_a1 * dsigmoid z in
+    g, dg
+
+
+  let hdh ~theta x =
+    let z = (x *@ theta.h_a1) + theta.h_bias1 in
+    let h = (phi z *@ theta.h_a2) + theta.h_bias2 in
+    let dh = theta.h_a1 * dphi z *@ theta.h_a2 in
+    h, dh
+
+
+  let generate_bs ~n ~m =
+    Option.map X.n_beg ~f:(fun nb ->
+      let nr = Int.(n / nb) in
+      assert (nr = m);
+      ( nb
+      , Array.init nb ~f:(fun i ->
+          let inr = Int.(i * nr) in
+          let rnr = Int.(n - ((i + 1) * nr)) in
+          AD.Maths.(
+            transpose
+              (concatenate
+                 ~axis:0
+                 [| AD.Mat.zeros inr m; AD.Mat.eye nr; AD.Mat.zeros rnr m |]))) ))
+
+
+  let dyn ~theta =
+    let default x u =
+      x + (F theta.dt_over_tau * ((g ~theta x * (h ~theta x - x)) + (u *@ theta.b)))
+    in
+    let b = theta.b in
+    let m = AD.Mat.row_num b
+    and n = AD.Mat.col_num b in
+    let beg_bs = generate_bs ~n ~m in
+    fun ~k ~x ~u ->
+      match beg_bs with
+      | None -> default x u
+      | Some (i, beg_b) -> if k < i then x + (u *@ beg_b.(k)) else default x u
+
+
+  let dyn_x =
+    (* checked to be numerically identical to AD jacobian *)
+    let dyn_x ~theta =
+      let n = AD.Mat.row_num theta.g_a1 in
+      let id_n = AD.Mat.eye n in
+      let default x =
+        let g, dg = gdg ~theta x in
+        let h, dh = hdh ~theta x in
+        id_n + (F theta.dt_over_tau * ((g * (dh - id_n)) + (dg * (h - x))))
+      in
+      fun ~k ~x ~u:_ ->
+        match X.n_beg with
+        | None -> default x
+        | Some i -> if k < i then id_n else default x
+    in
+    Some dyn_x
+
+
+  let dyn_u =
+    let dyn_u ~theta =
+      let b = theta.b in
+      let m = AD.Mat.row_num b
+      and n = AD.Mat.col_num b in
+      let b_scaled = AD.(F theta.dt_over_tau * b) in
+      let beg_bs = generate_bs ~n ~m in
+      (* fun ~k ~x:_ ~u:_ -> if k = 0 then id_n else b *)
+      fun ~k ~x:_ ~u:_ ->
+        match beg_bs with
+        | None -> b_scaled
+        | Some (nb, beg_b) -> if Int.(k < nb) then beg_b.(k) else b_scaled
+    in
+    Some dyn_u
+end

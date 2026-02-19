@@ -282,6 +282,7 @@ struct
   let predictions ?(noisy = false) ~n_samples ~prms mu_u =
     let u_tot = sample_recognition ~prms ~mu_u n_samples in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u:u_tot in
+    (* slice away n_beg components *)
     let z = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] z in
     let u = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] u_tot in
     let u_init = AD.Maths.get_slice [ []; [ 0; n_beg - 1 ]; [] ] u_tot in
@@ -313,6 +314,7 @@ struct
   let predictions_deterministic ~prms mu_u =
     let u = AD.expand0 mu_u in
     let z = Integrate.integrate ~prms:prms.dynamics ~n ~u in
+    let z = AD.Maths.get_slice [ []; [ n_beg - 1; -1 ]; [] ] z in
     let tr = AD.Maths.transpose ~axis:[| 1; 2; 0 |] in
     let o =
       L.pre_sample ~prms:prms.likelihood ~z:(AD.Maths.reshape z [| -1; n |])
